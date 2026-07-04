@@ -2,7 +2,7 @@
  * POS bill receipt modal with screen preview and print-only document. Used after
  * admin in-gym sales complete. Role: Admin.
  */
-import { formatCurrency, formatDate } from '../common';
+import { formatCurrency, formatDate } from '../../lib/formatters';
 import type { PosBill } from '../../types';
 
 interface PosBillReceiptProps {

@@ -3,7 +3,8 @@
  */
 import { useEffect, useState } from 'react';
 import { memberPlanService } from '../../services';
-import { LoadingSpinner, formatAppDate } from '../../components/common';
+import { LoadingSpinner } from '../../components/common';
+import { formatAppDate } from '../../lib/formatters';
 import type { MemberFitnessPlan, MemberFitnessPlanSummary } from '../../types';
 
 export function MemberMyPlans() {

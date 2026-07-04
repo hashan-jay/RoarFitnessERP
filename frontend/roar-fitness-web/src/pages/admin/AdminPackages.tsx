@@ -4,7 +4,8 @@
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { adminService } from '../../services';
-import { LoadingSpinner, EmptyState, formatCurrency } from '../../components/common';
+import { LoadingSpinner, EmptyState } from '../../components/common';
+import { formatCurrency } from '../../lib/formatters';
 import type { MembershipPackage, PackageType, CreatePackageRequest, UpdatePackageRequest } from '../../types';
 
 const emptyForm: CreatePackageRequest = {

@@ -5,7 +5,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { paymentService, ApiError } from '../../services';
-import { formatCurrency } from '../../components/common';
+import { formatCurrency } from '../../lib/formatters';
 
 export function MockPaymentPage() {
   const navigate = useNavigate();

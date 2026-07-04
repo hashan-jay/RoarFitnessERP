@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { sessionService } from '../../services';
 import { LoadingSpinner } from '../../components/common';
-import { SessionCard, formatSessionRange } from '../../components/SessionCard';
+import { formatSessionRange } from '../../lib/formatters';
+import { SessionCard } from '../../components/SessionCard';
 import type { SpecialSession } from '../../types';
 
 export function InstructorSessions() {

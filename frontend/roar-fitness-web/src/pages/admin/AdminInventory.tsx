@@ -3,7 +3,8 @@
  */
 import { useEffect, useState, type FormEvent, Fragment } from 'react';
 import { adminService } from '../../services';
-import { LoadingSpinner, EmptyState, formatCurrency } from '../../components/common';
+import { LoadingSpinner, EmptyState } from '../../components/common';
+import { formatCurrency } from '../../lib/formatters';
 import type { Product, ProductCategory, CreateProductRequest, UpdateProductRequest } from '../../types';
 
 const emptyForm: CreateProductRequest = {

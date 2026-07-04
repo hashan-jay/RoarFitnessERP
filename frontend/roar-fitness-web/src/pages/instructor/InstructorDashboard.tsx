@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { instructorService, membershipService, sessionService } from '../../services';
-import { LoadingSpinner, formatAppTime } from '../../components/common';
+import { LoadingSpinner } from '../../components/common';
+import { formatAppTime } from '../../lib/formatters';
 import { SessionRequestModal } from '../../components/SessionRequestModal';
 import type { AttendanceLog, InstructorProfile, SpecialSession } from '../../types';
 

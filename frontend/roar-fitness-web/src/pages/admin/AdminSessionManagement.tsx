@@ -4,8 +4,9 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { sessionService, ApiError } from '../../services';
-import { LoadingSpinner, formatCurrency, formatAppDateTime, formatAppMonthYear } from '../../components/common';
-import { SessionCard, formatSessionRange } from '../../components/SessionCard';
+import { LoadingSpinner } from '../../components/common';
+import { formatCurrency, formatAppDateTime, formatAppMonthYear, formatSessionRange } from '../../lib/formatters';
+import { SessionCard } from '../../components/SessionCard';
 import type { SpecialSession } from '../../types';
 
 type AdminTab = 'Pending' | 'Accepted' | 'Rejected' | 'Calendar';

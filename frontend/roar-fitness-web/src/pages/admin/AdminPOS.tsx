@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { adminService } from '../../services';
 import { ProductCard } from '../../components/ProductCard';
 import { PosBillReceipt } from '../../components/admin/PosBillReceipt';
-import { LoadingSpinner, formatCurrency } from '../../components/common';
+import { LoadingSpinner } from '../../components/common';
+import { formatCurrency } from '../../lib/formatters';
 import type { Product, PosBill } from '../../types';
 
 const fallbackProducts: Product[] = [

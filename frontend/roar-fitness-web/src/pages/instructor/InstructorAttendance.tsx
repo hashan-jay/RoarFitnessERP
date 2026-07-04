@@ -4,7 +4,8 @@
  */
 import { useEffect, useState } from 'react';
 import { instructorService } from '../../services';
-import { LoadingSpinner, EmptyState, formatAppDateTime } from '../../components/common';
+import { LoadingSpinner, EmptyState } from '../../components/common';
+import { formatAppDateTime } from '../../lib/formatters';
 import type { AttendanceLog } from '../../types';
 
 const fallbackAttendance: AttendanceLog[] = [

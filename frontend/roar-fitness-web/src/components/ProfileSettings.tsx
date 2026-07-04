@@ -2,7 +2,8 @@
  * Shared profile edit form for member and instructor portals with photo upload.
  */
 import { useEffect, useMemo, useState, type FormEvent, type ChangeEvent } from 'react';
-import { LoadingSpinner, calculateAgeFromDateOfBirth, formatAppDate, toDateInputValue } from './common';
+import { LoadingSpinner } from './common';
+import { calculateAgeFromDateOfBirth, formatAppDate, toDateInputValue } from '../lib/formatters';
 import { resolveAssetUrl } from '../lib/assets';
 import { ApiError } from '../services/apiClient';
 import type { PortalProfile, UpdateProfileRequest } from '../types';

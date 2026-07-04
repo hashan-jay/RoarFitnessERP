@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { memberService } from '../../services';
-import { LoadingSpinner, formatDate } from '../../components/common';
+import { LoadingSpinner } from '../../components/common';
+import { formatDate } from '../../lib/formatters';
 import type { MemberProfile } from '../../types';
 
 const fallbackProfile: MemberProfile = {

@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { sessionService, paymentService, ApiError } from '../../services';
 import { LoadingSpinner } from '../../components/common';
-import { SessionCard, isSessionExpired } from '../../components/SessionCard';
+import { SessionCard } from '../../components/SessionCard';
+import { isSessionExpired } from '../../lib/sessionUtils';
 import type { SpecialSession } from '../../types';
 
 type MemberTab = 'all' | 'mine';

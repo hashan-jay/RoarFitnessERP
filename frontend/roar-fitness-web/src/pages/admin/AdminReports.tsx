@@ -4,12 +4,12 @@
  */
 import { useEffect, useState } from 'react';
 import { adminService } from '../../services';
-import { LoadingSpinner, formatCurrency, formatAppDateTime } from '../../components/common';
+import { LoadingSpinner } from '../../components/common';
+import { formatCurrency, formatAppDateTime } from '../../lib/formatters';
+import { monthlyReportToBreakdown, reportSummaryToBreakdown } from '../../lib/reportBreakdown';
 import {
   RevenueBreakdownCards,
   RecentTransactionsTable,
-  reportSummaryToBreakdown,
-  monthlyReportToBreakdown,
 } from '../../components/admin/RevenueReportSections';
 import type { ReportSummary, MonthlyReport } from '../../types';
 

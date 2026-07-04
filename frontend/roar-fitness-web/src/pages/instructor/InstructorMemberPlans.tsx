@@ -4,7 +4,8 @@
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { memberPlanService, ApiError } from '../../services';
-import { LoadingSpinner, formatAppDate } from '../../components/common';
+import { LoadingSpinner } from '../../components/common';
+import { formatAppDate } from '../../lib/formatters';
 import type {
   CreateMemberFitnessPlanRequest,
   MemberFitnessPlan,

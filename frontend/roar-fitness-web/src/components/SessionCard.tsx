@@ -3,7 +3,7 @@
  * action slot (enroll, approve, etc.).
  */
 import type { SpecialSession } from '../types';
-import { formatCurrency, formatDate, formatAppTime, formatSessionRange } from './common';
+import { formatCurrency, formatDate, formatAppTime } from '../lib/formatters';
 
 interface SessionCardProps {
   session: SpecialSession;
@@ -32,10 +32,4 @@ export function SessionCard({ session, action, muted }: SessionCardProps) {
       {action}
     </div>
   );
-}
-
-export { formatSessionRange };
-
-export function isSessionExpired(session: SpecialSession) {
-  return session.runtimeStatus === 'Expired';
 }

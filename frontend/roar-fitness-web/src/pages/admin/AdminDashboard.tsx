@@ -5,8 +5,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { adminService } from '../../services';
-import { LoadingSpinner, formatCurrency } from '../../components/common';
-import { RevenueBreakdownCards, reportSummaryToBreakdown } from '../../components/admin/RevenueReportSections';
+import { LoadingSpinner } from '../../components/common';
+import { formatCurrency } from '../../lib/formatters';
+import { reportSummaryToBreakdown } from '../../lib/reportBreakdown';
+import { RevenueBreakdownCards } from '../../components/admin/RevenueReportSections';
 import type { ReportSummary } from '../../types';
 
 const fallbackReports: ReportSummary = {
