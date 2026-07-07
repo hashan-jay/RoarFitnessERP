@@ -61,23 +61,6 @@ public class MembershipController(IMembershipService membership) : ControllerBas
         return updated ? Ok(new { message = "Profile updated." }) : NotFound();
     }
 
-    /// <summary>Upload a member profile photo (JPEG, PNG, or WebP up to 5 MB).</summary>
-    [Authorize(Roles = "Member")]
-    [HttpPost("profile/photo")]
-    [ProducesResponseType(typeof(ProfilePhotoUploadResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult> UploadMemberPhoto([FromForm] IFormFile photo, [FromServices] IWebHostEnvironment env)
-    {
-        if (photo is null || photo.Length == 0)
-            return BadRequest(new { message = "Please choose a photo to upload." });
-
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var url = await membership.UploadMemberProfilePhotoAsync(userId, photo, env);
-        return url is null
-            ? BadRequest(new { message = "Could not upload photo. Use JPEG, PNG, or WebP under 5 MB." })
-            : Ok(new ProfilePhotoUploadResponse(url));
-    }
-
     /// <summary>Get logged-in instructor profile.</summary>
     [Authorize(Roles = "Instructor")]
     [HttpGet("instructor/profile")]
@@ -90,41 +73,71 @@ public class MembershipController(IMembershipService membership) : ControllerBas
         return profile is null ? NotFound() : Ok(profile);
     }
 
-    /// <summary>Update editable instructor profile fields.</summary>
-    [Authorize(Roles = "Instructor")]
-    [HttpPut("instructor/profile")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult> UpdateInstructorProfile([FromBody] UpdateProfileRequest request)
-    {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var updated = await membership.UpdateInstructorProfileAsync(userId, request);
-        return updated ? Ok(new { message = "Profile updated." }) : NotFound();
-    }
-
-    /// <summary>Upload an instructor profile photo (JPEG, PNG, or WebP up to 5 MB).</summary>
-    [Authorize(Roles = "Instructor")]
-    [HttpPost("instructor/profile/photo")]
-    [ProducesResponseType(typeof(ProfilePhotoUploadResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult> UploadInstructorPhoto([FromForm] IFormFile photo, [FromServices] IWebHostEnvironment env)
-    {
-        if (photo is null || photo.Length == 0)
-            return BadRequest(new { message = "Please choose a photo to upload." });
-
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var url = await membership.UploadInstructorProfilePhotoAsync(userId, photo, env);
-        return url is null
-            ? BadRequest(new { message = "Could not upload photo. Use JPEG, PNG, or WebP under 5 MB." })
-            : Ok(new ProfilePhotoUploadResponse(url));
-    }
-
-    /// <summary>List all gym members (Admin).</summary>
+    /// <summary>List gym members for admin, optionally filtered by lifecycle section.</summary>
     [Authorize(Roles = "Admin")]
     [HttpGet("members")]
+    [ProducesResponseType(typeof(IReadOnlyList<AdminMemberListItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult> ListMembers([FromQuery] string? section = "all") =>
+        Ok(await membership.ListMembersForAdminAsync(section));
+
+    /// <summary>Update a member account (name, email, NIC, password) with member permission.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPut("members/{memberId:int}/account")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult> ListMembers() =>
-        Ok(await membership.ListMembersAsync());
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> UpdateMemberAccount(int memberId, [FromBody] AdminUpdateMemberAccountRequest request)
+    {
+        var ok = await membership.UpdateMemberAccountByAdminAsync(memberId, request);
+        return ok
+            ? Ok(new { message = "Member account updated." })
+            : BadRequest(new { message = "Could not update member account. Check details and member permission." });
+    }
+
+    /// <summary>Terminate a member — blocks login and fingerprint access.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("members/{memberId:int}/terminate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> TerminateMember(int memberId)
+    {
+        var ok = await membership.TerminateMemberAsync(memberId);
+        return ok
+            ? Ok(new { message = "Member terminated." })
+            : BadRequest(new { message = "Could not terminate member." });
+    }
+
+    /// <summary>Reinstate a terminated member back into the roster.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("members/{memberId:int}/reinstate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> ReinstateMember(int memberId)
+    {
+        var ok = await membership.ReinstateMemberAsync(memberId);
+        return ok
+            ? Ok(new { message = "Member reinstated." })
+            : BadRequest(new { message = "Could not reinstate member." });
+    }
+
+    /// <summary>Search members for in-gym membership purchase or renewal.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpGet("members/renew/search")]
+    [ProducesResponseType(typeof(IReadOnlyList<MemberRenewSearchItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult> SearchMembersForRenewal([FromQuery] string? q) =>
+        Ok(await membership.SearchMembersForRenewalAsync(q ?? string.Empty));
+
+    /// <summary>Record in-gym membership payment and queue or activate the next membership period.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("members/{memberId:int}/renew/in-gym")]
+    [ProducesResponseType(typeof(MembershipRenewBillDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> RenewMembershipInGym(int memberId, [FromBody] AdminMembershipRenewRequest request)
+    {
+        var bill = await membership.RenewMembershipInGymAsync(memberId, request);
+        return bill is null
+            ? BadRequest(new { message = "Could not process membership payment. Member may be terminated or the package is invalid." })
+            : Ok(bill);
+    }
 
     /// <summary>Create a member account at the gym front desk (Admin).</summary>
     [Authorize(Roles = "Admin")]
@@ -140,12 +153,68 @@ public class MembershipController(IMembershipService membership) : ControllerBas
             : Ok(new { message = "Member created.", memberId = result.Value.member.MemberId, identificationNumber = result.Value.member.IdentificationNumber });
     }
 
-    /// <summary>List all instructors (Admin).</summary>
+    /// <summary>List instructors for admin, optionally filtered by lifecycle section.</summary>
     [Authorize(Roles = "Admin")]
     [HttpGet("instructors")]
+    [ProducesResponseType(typeof(IReadOnlyList<AdminInstructorListItemDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult> ListInstructors([FromQuery] string? section = "all") =>
+        Ok(await membership.ListInstructorsForAdminAsync(section));
+
+    /// <summary>Update an instructor account with instructor permission.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPut("instructors/{instructorId:int}/account")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult> ListInstructors() =>
-        Ok(await membership.ListInstructorsAsync());
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> UpdateInstructorAccount(int instructorId, [FromBody] AdminUpdateInstructorAccountRequest request)
+    {
+        var ok = await membership.UpdateInstructorAccountByAdminAsync(instructorId, request);
+        return ok
+            ? Ok(new { message = "Instructor account updated." })
+            : BadRequest(new { message = "Could not update instructor account. Check details and instructor permission." });
+    }
+
+    /// <summary>Upload or replace an instructor profile photo for the public website.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("instructors/{instructorId:int}/photo")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> UploadInstructorPhoto(int instructorId, [FromForm] IFormFile photo)
+    {
+        if (photo is null || photo.Length <= 0)
+            return BadRequest(new { message = "No photo file was received." });
+
+        var url = await membership.UploadInstructorPhotoAsync(instructorId, photo);
+        return url is null
+            ? BadRequest(new { message = "Could not upload photo. Use JPG, PNG, or WebP up to 5 MB." })
+            : Ok(new { message = "Profile photo updated.", photoUrl = url });
+    }
+
+    /// <summary>Terminate an instructor who has left the gym.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("instructors/{instructorId:int}/terminate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> TerminateInstructor(int instructorId)
+    {
+        var ok = await membership.TerminateInstructorAsync(instructorId);
+        return ok
+            ? Ok(new { message = "Instructor terminated." })
+            : BadRequest(new { message = "Could not terminate instructor." });
+    }
+
+    /// <summary>Reinstate a terminated instructor returning to Roar Fitness.</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("instructors/{instructorId:int}/reinstate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> ReinstateInstructor(int instructorId)
+    {
+        var ok = await membership.ReinstateInstructorAsync(instructorId);
+        return ok
+            ? Ok(new { message = "Instructor reinstated." })
+            : BadRequest(new { message = "Could not reinstate instructor." });
+    }
 
     /// <summary>Create an instructor account (Admin).</summary>
     [Authorize(Roles = "Admin")]

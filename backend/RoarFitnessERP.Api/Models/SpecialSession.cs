@@ -17,6 +17,6 @@ public class SpecialSession
     public int? ReviewedByUserId { get; set; }
     public User? ReviewedByUser { get; set; }
     public DateTime? ReviewedAt { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppTime.Now();
     public ICollection<SpecialSessionEnrollment> Enrollments { get; set; } = [];
 }

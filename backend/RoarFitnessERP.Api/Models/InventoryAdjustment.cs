@@ -13,5 +13,5 @@ public class InventoryAdjustment
     public User AdjustedByUser { get; set; } = null!;
     public int QuantityChange { get; set; }
     public string Reason { get; set; } = string.Empty;
-    public DateTime AdjustedAt { get; set; } = DateTime.UtcNow;
+    public DateTime AdjustedAt { get; set; } = AppTime.Now();
 }

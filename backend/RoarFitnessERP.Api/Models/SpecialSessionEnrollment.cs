@@ -10,5 +10,5 @@ public class SpecialSessionEnrollment
     public Member Member { get; set; } = null!;
     public int PaymentId { get; set; }
     public Payment Payment { get; set; } = null!;
-    public DateTime EnrolledAt { get; set; } = DateTime.UtcNow;
+    public DateTime EnrolledAt { get; set; } = AppTime.Now();
 }

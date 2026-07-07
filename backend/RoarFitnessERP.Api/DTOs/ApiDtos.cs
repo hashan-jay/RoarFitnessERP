@@ -35,7 +35,20 @@ public record CreateUserByAdminRequest(
     int? PackageId,
     string? Specialization,
     string? NicNumber,
-    DateTime? DateOfBirth);
+    DateTime? DateOfBirth,
+    string? Gender = null,
+    string? AddressLine1 = null,
+    string? City = null,
+    string? Country = null,
+    string? EmergencyContactName = null,
+    string? EmergencyContactPhone = null,
+    string? Bio = null,
+    int? YearsExperience = null,
+    string? Qualification1 = null,
+    string? Qualification2 = null,
+    string? Speciality1 = null,
+    string? Speciality2 = null,
+    string? Speciality3 = null);
 
 public record PaymentConfirmRequest(string PaymentReference, string GatewayTransactionId);
 
@@ -57,8 +70,41 @@ public record AttendanceLogDto(
     string? InstructorName,
     string PersonType);
 
+public record MemberAttendanceEntryDto(
+    long AttendanceLogId,
+    DateTime LoggedAt,
+    bool AccessGranted,
+    string? ValidationMessage);
+
+public record AdminMemberAttendanceLogDto(
+    long AttendanceLogId,
+    DateTime LoggedAt,
+    bool AccessGranted,
+    string? ValidationMessage,
+    int MemberId,
+    string MemberIdentificationNumber,
+    string MemberName);
+
+public record AdminAttendanceLogDto(
+    long AttendanceLogId,
+    DateTime LoggedAt,
+    bool AccessGranted,
+    string? ValidationMessage,
+    string PersonType,
+    string? IdentificationNumber,
+    string PersonName);
+
 public record ActivateFingerprintRequest(int MemberId, string FingerprintTemplateId);
 public record ActivateInstructorFingerprintRequest(int InstructorId, string FingerprintTemplateId);
+
+public record EnrolledFingerprintDto(
+    string FingerprintTemplateId,
+    string PersonName,
+    string PersonType,
+    int? MemberId,
+    int? InstructorId,
+    string IdentificationNumber,
+    bool HasActiveMembership);
 
 public record ProductDto(
     int ProductId,
@@ -137,9 +183,11 @@ public record InventoryAdjustRequest(int ProductId, int QuantityChange, string R
 
 // --- Report DTOs ---
 public record ReportSummaryDto(
-    decimal TotalMembershipInGymRevenue,
+    decimal TotalMembershipInGymCashRevenue,
+    decimal TotalMembershipInGymCardRevenue,
     decimal TotalMembershipGatewayRevenue,
-    decimal TotalPosRevenue,
+    decimal TotalPosCashRevenue,
+    decimal TotalPosCardRevenue,
     decimal TotalSessionGatewayRevenue,
     decimal TotalRevenue,
     decimal ThisMonthRevenue,
@@ -160,22 +208,57 @@ public record RecentTransactionDto(
 
 public record DailyRevenueDto(
     DateTime Date,
-    decimal MembershipInGym,
+    decimal Total,
+    decimal MembershipInGymCash,
+    decimal MembershipInGymCard,
     decimal MembershipGateway,
-    decimal Pos,
-    decimal Session);
+    decimal PosCash,
+    decimal PosCard,
+    decimal SessionGateway);
 
 public record MonthlyReportDto(
     int Year,
     int Month,
     string MonthLabel,
-    decimal MembershipInGymRevenue,
+    decimal MembershipInGymCashRevenue,
+    decimal MembershipInGymCardRevenue,
     decimal MembershipGatewayRevenue,
-    decimal PosRevenue,
+    decimal PosCashRevenue,
+    decimal PosCardRevenue,
     decimal SessionGatewayRevenue,
     decimal TotalRevenue,
+    IReadOnlyList<DailyRevenueDto> DailyRevenue,
     IReadOnlyList<SoldItemReportDto> SoldItems,
     IReadOnlyList<RecentTransactionDto> RecentTransactions);
+
+public record MemberRenewSearchItemDto(
+    int MemberId,
+    string IdentificationNumber,
+    string FullName,
+    string? Phone,
+    string? NicNumber,
+    bool HasActiveMembership,
+    DateTime? CurrentMembershipEndDate,
+    DateTime? MembershipExpiredDate,
+    DateTime? QueuedMembershipStartDate,
+    bool IsFingerprintActivated);
+
+public record AdminMembershipRenewRequest(int PackageId, string PaymentMethod);
+
+public record MembershipRenewBillDto(
+    string BillReference,
+    string PaymentReference,
+    string MemberName,
+    string IdentificationNumber,
+    string? Phone,
+    string? NicNumber,
+    string PackageName,
+    int DurationDays,
+    decimal AmountLKR,
+    string PaymentMethod,
+    DateTime SaleDate,
+    DateTime MembershipStartDate,
+    DateTime MembershipEndDate);
 
 public record SoldItemReportDto(
     string ProductName,
@@ -199,12 +282,105 @@ public record MemberProfileDto(
     string? Country,
     string? EmergencyContactName,
     string? EmergencyContactPhone,
-    string? ProfilePhotoUrl,
     bool IsFingerprintActivated,
     DateTime? FingerprintActivatedAt,
     bool HasActiveMembership,
+    DateTime? MembershipStartDate,
     DateTime? MembershipEndDate,
-    string? ActivePackageName);
+    string? ActivePackageName,
+    string? QueuedPackageName,
+    DateTime? QueuedMembershipStartDate,
+    DateTime? QueuedMembershipEndDate);
+
+public record AdminMemberListItemDto(
+    int MemberId,
+    string IdentificationNumber,
+    string FirstName,
+    string LastName,
+    string FullName,
+    string Email,
+    string? Phone,
+    string? NicNumber,
+    string? EmergencyContactName,
+    string? EmergencyContactPhone,
+    bool IsFingerprintActivated,
+    bool IsAccountActive,
+    bool IsTerminated,
+    DateTime? TerminatedAt,
+    bool HasActiveMembership,
+    DateTime? MembershipStartDate,
+    DateTime? MembershipEndDate,
+    string? ActivePackageName,
+    DateTime? DateOfBirth,
+    string? Gender,
+    string? AddressLine1,
+    string? City,
+    string? Country);
+
+public record AdminUpdateMemberAccountRequest(
+    string FirstName,
+    string LastName,
+    string Email,
+    string? NicNumber,
+    string? Password,
+    bool MemberPermissionConfirmed);
+
+public record AdminInstructorListItemDto(
+    int InstructorId,
+    string IdentificationNumber,
+    string FirstName,
+    string LastName,
+    string FullName,
+    string Email,
+    string? Phone,
+    string? NicNumber,
+    DateTime? DateOfBirth,
+    string? Specialization,
+    string? AddressLine1,
+    string? Country,
+    int YearsExperience,
+    string? Qualification1,
+    string? Qualification2,
+    string? Speciality1,
+    string? Speciality2,
+    string? Speciality3,
+    string? ProfilePhotoUrl,
+    bool IsFingerprintActivated,
+    bool IsAccountActive,
+    bool IsTerminated,
+    DateTime? TerminatedAt,
+    DateTime? HireDate);
+
+public record AdminUpdateInstructorAccountRequest(
+    string FirstName,
+    string LastName,
+    string Email,
+    string? Phone,
+    string? NicNumber,
+    DateTime? DateOfBirth,
+    string? Specialization,
+    string? AddressLine1,
+    string? Country,
+    int YearsExperience,
+    string? Qualification1,
+    string? Qualification2,
+    string? Speciality1,
+    string? Speciality2,
+    string? Speciality3,
+    string? Password,
+    bool InstructorPermissionConfirmed);
+
+public record PublicInstructorDto(
+    int InstructorId,
+    string FullName,
+    string Role,
+    int YearsExperience,
+    string? Qualification1,
+    string? Qualification2,
+    string? Speciality1,
+    string? Speciality2,
+    string? Speciality3,
+    string? PhotoUrl);
 
 public record InstructorProfileDto(
     int InstructorId,
@@ -216,12 +392,18 @@ public record InstructorProfileDto(
     DateTime? DateOfBirth,
     int? Age,
     string? Specialization,
+    string? Bio,
     string? AddressLine1,
     string? City,
     string? Country,
-    string? EmergencyContactName,
-    string? EmergencyContactPhone,
+    int YearsExperience,
+    string? Qualification1,
+    string? Qualification2,
+    string? Speciality1,
+    string? Speciality2,
+    string? Speciality3,
     string? ProfilePhotoUrl,
+    DateTime? HireDate,
     bool IsFingerprintActivated);
 
 public record UpdateProfileRequest(
@@ -231,7 +413,6 @@ public record UpdateProfileRequest(
     string? Country,
     string? EmergencyContactName,
     string? EmergencyContactPhone,
-    string? ProfilePhotoUrl,
     DateTime? DateOfBirth);
 
 // --- Membership package DTOs ---
@@ -269,10 +450,15 @@ public record UpdatePackageRequest(
     bool IsActive);
 
 public record TrainerDto(int TrainerId, string FullName, string? Title, string? Bio, string? Specializations);
-public record ContactRequest(string FullName, string Email, string? Phone, string Subject, string Message);
+public record ContactRequest(string FullName, string Email, string? Phone, string? Subject, string Message);
 
-public record ProfilePhotoUploadResponse(string ProfilePhotoUrl);
-
+public record VisitorInquiryDto(
+    int InquiryId,
+    string FullName,
+    string Email,
+    string? Phone,
+    string Message,
+    DateTime SubmittedAt);
 public record CreateSpecialSessionRequest(
     string Title,
     string Description,
@@ -304,23 +490,44 @@ public record SpecialSessionDto(
     DateTime CreatedAt,
     IReadOnlyList<SpecialSessionEnrollmentDto>? Enrollments);
 
-public record MemberPlanMemberOptionDto(
-    int MemberId,
-    string IdentificationNumber,
+public record PlanInstructorOptionDto(
+    int InstructorId,
     string FullName,
-    string Email);
+    string? Specialization);
 
-public record MemberFitnessPlanDto(
-    int PlanId,
+public record MemberPlanRequestDto(
+    int RequestId,
     int MemberId,
     string MemberName,
     string MemberIdentificationNumber,
     int InstructorId,
     string InstructorName,
-    string Title,
-    string FitnessGoal,
-    string WorkoutPlan,
-    string MealPlan,
+    string PlanCategory,
+    string? MemberNote,
+    string Status,
+    DateTime CreatedAt,
+    DateTime? ApprovedAt,
+    int? PlanId);
+
+public record CreateMemberPlanRequest(
+    int InstructorId,
+    string PlanCategory,
+    string? MemberNote);
+
+public record ApproveMemberPlanRequest(
+    string Description,
+    string? Notes);
+
+public record MemberFitnessPlanDto(
+    int PlanId,
+    int? RequestId,
+    int MemberId,
+    string MemberName,
+    string MemberIdentificationNumber,
+    int InstructorId,
+    string InstructorName,
+    string PlanCategory,
+    string Description,
     string? Notes,
     DateTime CreatedAt,
     DateTime UpdatedAt);
@@ -329,22 +536,71 @@ public record MemberFitnessPlanSummaryDto(
     int PlanId,
     int MemberId,
     string MemberName,
+    string MemberIdentificationNumber,
     string InstructorName,
-    string Title,
-    string FitnessGoal,
+    string PlanCategory,
     DateTime UpdatedAt);
 
-public record CreateMemberFitnessPlanRequest(
-    int MemberId,
+public record PublicGeneralClassDto(
+    int GeneralClassId,
     string Title,
-    string FitnessGoal,
-    string WorkoutPlan,
-    string MealPlan,
-    string? Notes);
+    string Category,
+    string Description,
+    int InstructorId,
+    string InstructorName,
+    string InstructorRole,
+    string? InstructorPhotoUrl,
+    int Weekday,
+    string TimeRange,
+    string Duration,
+    string Studio);
 
-public record UpdateMemberFitnessPlanRequest(
+public record PublicVipSessionDto(
+    int SessionId,
     string Title,
-    string FitnessGoal,
-    string WorkoutPlan,
-    string MealPlan,
-    string? Notes);
+    string Description,
+    DateTime StartDateTime,
+    DateTime EndDateTime,
+    decimal FeePerPersonLKR,
+    int MaxParticipants,
+    int EnrolledCount,
+    int SpotsRemaining,
+    string InstructorName,
+    int InstructorId);
+
+public record AdminGeneralClassDto(
+    int GeneralClassId,
+    string Title,
+    string Category,
+    string Description,
+    int InstructorId,
+    string InstructorName,
+    string InstructorRole,
+    string? InstructorPhotoUrl,
+    int Weekday,
+    string TimeRange,
+    string Duration,
+    string Studio,
+    bool IsActive,
+    DateTime UpdatedAt);
+
+public record CreateGeneralClassRequest(
+    string Title,
+    string Category,
+    string Description,
+    int InstructorId,
+    int Weekday,
+    string TimeRange,
+    string Duration,
+    string Studio);
+
+public record UpdateGeneralClassRequest(
+    string Title,
+    string Category,
+    string Description,
+    int InstructorId,
+    int Weekday,
+    string TimeRange,
+    string Duration,
+    string Studio,
+    bool IsActive);

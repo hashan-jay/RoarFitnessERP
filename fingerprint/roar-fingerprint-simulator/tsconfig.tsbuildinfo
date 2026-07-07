@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/api/client.ts","./src/components/enrollpanel.tsx","./src/components/fingerprintpad.tsx","./src/components/gatescanpanel.tsx","./src/components/logspanel.tsx","./src/lib/fingerprintid.ts","./src/services/attendance.ts","./src/services/auth.ts","./src/services/membership.ts"],"version":"5.9.3"}

@@ -10,8 +10,9 @@ public class Product
     public string ProductName { get; set; } = string.Empty;
     public string? Description { get; set; }
     public decimal UnitPriceLKR { get; set; }
+    public bool IsAvailableOnline { get; set; } = true;
     public bool IsActive { get; set; } = true;
     public string? ImageUrl { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppTime.Now();
     public InventoryItem? Inventory { get; set; }
 }

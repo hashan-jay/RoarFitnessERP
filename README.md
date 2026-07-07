@@ -34,12 +34,14 @@ On first run, the app creates the `RoarFitnessERPDB` database on SQL Express and
 Open a **second terminal**:
 
 ```powershell
-cd C:\Users\HP\RoarFitnessERP\frontend\roar-fitness-web
+cd C:\Users\HP\RoarFitnessERP\frontend\RoarFitness-Frontend\roarFitness
 npm install
 npm run dev
 ```
 
-Website: http://localhost:5173
+Website: http://localhost:5200
+
+Or from the repo root: `start-frontend.cmd`
 
 > **Important:** Do not open `index.html` directly in the browser. React + Vite must run through `npm run dev`.
 
@@ -60,7 +62,7 @@ For a different machine, replace `HASHJAY\\SQLEXPRESS` with your SQL Server inst
 ```
 RoarFitnessERP/
 ├── backend/RoarFitnessERP.Api/   # ASP.NET Core REST API
-├── frontend/roar-fitness-web/    # React public site + dashboards
+├── frontend/RoarFitness-Frontend/roarFitness/   # React public site + dashboards (:5200)
 ├── database/scripts/             # SQL schema scripts (reference)
 └── docs/API-REFERENCE.md         # API endpoints
 ```
@@ -71,6 +73,6 @@ RoarFitnessERP/
 |-------|-----|
 | `MSB3027` / file locked by `RoarFitnessERP.Api` | Another API instance is still running. Run `.\stop-api.ps1` in the API folder, or `Stop-Process -Name RoarFitnessERP.Api -Force`, then `dotnet watch run` again |
 | API crash on startup | Ensure SQL Server is running and connection string is correct |
-| Blank frontend | Run `npm run dev`, visit http://localhost:5173 |
-| CORS / API errors | Keep API on port 5188 and frontend on 5173 |
+| Blank frontend | Run `npm run dev`, visit http://localhost:5200 |
+| CORS / API errors | Keep API on port 5188 and frontend on 5200 |
 | Stale database after schema change | Drop database `RoarFitnessERPDB` in SSMS and restart API |

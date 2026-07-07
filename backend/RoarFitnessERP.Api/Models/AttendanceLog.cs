@@ -12,5 +12,5 @@ public class AttendanceLog
     public string? ScannerDeviceId { get; set; }
     public bool AccessGranted { get; set; }
     public string? ValidationMessage { get; set; }
-    public DateTime LoggedAt { get; set; } = DateTime.UtcNow;
+    public DateTime LoggedAt { get; set; } = AppTime.Now();
 }

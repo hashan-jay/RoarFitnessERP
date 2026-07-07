@@ -107,8 +107,6 @@ CREATE TABLE Instructors (
     AddressLine1 NVARCHAR(200) NULL,
     City NVARCHAR(100) NULL DEFAULT N'Colombo',
     Country NVARCHAR(100) NULL DEFAULT N'Sri Lanka',
-    EmergencyContactName NVARCHAR(100) NULL,
-    EmergencyContactPhone NVARCHAR(20) NULL,
     Specialization NVARCHAR(200) NULL,
     HireDate DATE NOT NULL DEFAULT CAST(GETDATE() AS DATE),
     FingerprintTemplateId NVARCHAR(200) NULL,
@@ -274,17 +272,33 @@ CREATE TABLE SpecialSessionEnrollments (
 
 CREATE TABLE MemberFitnessPlans (
     PlanId INT IDENTITY(1,1) PRIMARY KEY,
+    RequestId INT NULL,
     MemberId INT NOT NULL REFERENCES Members(MemberId),
     InstructorId INT NOT NULL REFERENCES Instructors(InstructorId),
-    Title NVARCHAR(200) NOT NULL,
-    FitnessGoal NVARCHAR(200) NOT NULL,
-    WorkoutPlan NVARCHAR(MAX) NOT NULL,
-    MealPlan NVARCHAR(MAX) NOT NULL,
+    PlanCategory NVARCHAR(50) NOT NULL,
+    Description NVARCHAR(MAX) NOT NULL,
     Notes NVARCHAR(MAX) NULL,
     CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     UpdatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
 );
 CREATE INDEX IX_MemberFitnessPlans_MemberId_UpdatedAt ON MemberFitnessPlans(MemberId, UpdatedAt);
+
+CREATE TABLE MemberPlanRequests (
+    RequestId INT IDENTITY(1,1) PRIMARY KEY,
+    MemberId INT NOT NULL REFERENCES Members(MemberId),
+    InstructorId INT NOT NULL REFERENCES Instructors(InstructorId),
+    PlanCategory NVARCHAR(50) NOT NULL,
+    MemberNote NVARCHAR(MAX) NULL,
+    Status NVARCHAR(50) NOT NULL DEFAULT 'Pending',
+    PlanId INT NULL REFERENCES MemberFitnessPlans(PlanId),
+    CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    ApprovedAt DATETIME2 NULL
+);
+CREATE INDEX IX_MemberPlanRequests_InstructorId_Status ON MemberPlanRequests(InstructorId, Status);
+
+ALTER TABLE MemberFitnessPlans
+    ADD CONSTRAINT FK_MemberFitnessPlans_MemberPlanRequests_RequestId
+    FOREIGN KEY (RequestId) REFERENCES MemberPlanRequests(RequestId);
 
 -- ============ INDEXES ============
 

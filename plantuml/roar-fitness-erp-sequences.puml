@@ -1,0 +1,426 @@
+' =============================================================================
+' Roar Fitness ERP — Sequence Diagrams
+' Systems:
+'   • frontend  — React SPA (Member / Instructor / Admin / Public)  :5200
+'   • backend    — ASP.NET Core API                                  :5188
+'   • fingerprint — Fingerprint scanner simulator (external)         :5190
+' =============================================================================
+
+@startuml RoarFitnessERP_System_Context
+title System Context — Roar Fitness ERP
+
+skinparam shadowing false
+skinparam participant {
+  BackgroundColor #FEFEFE
+  BorderColor #333333
+}
+
+actor "Visitor /\nMember /\nInstructor /\nAdmin" as User
+
+box "frontend — Roar Fitness SPA\n(port 5200)" #E8F4FD
+  participant "Public Website" as PublicFE
+  participant "Member Portal" as MemberFE
+  participant "Instructor Portal" as InstructorFE
+  participant "Admin Portal" as AdminFE
+end box
+
+box "backend — RoarFitnessERP.Api\n(port 5188)" #FFF8E8
+  participant "REST API\n(/api/*)" as API
+  database "SQL Server\n(EF Core)" as DB
+end box
+
+box "fingerprint — Scanner Simulator\n(port 5190) <<external>>" #FFE8E8
+  participant "Enroll Panel" as SimEnroll
+  participant "Gate Scan Panel" as SimGate
+end box
+
+actor "PayHere\n<<external>>" as PayHere
+
+User --> PublicFE : browse / register / contact
+User --> MemberFE : member portal
+User --> InstructorFE : instructor portal
+User --> AdminFE : admin portal
+User --> SimEnroll : enroll fingerprint (admin)
+User --> SimGate : gym entry scan
+
+PublicFE --> API : HTTP + JWT (when logged in)
+MemberFE --> API
+InstructorFE --> API
+AdminFE --> API
+SimEnroll --> API : HTTP + Admin JWT
+SimGate --> API : HTTP (scan: no auth)
+
+API --> DB
+API --> PayHere : payment webhook (optional)
+
+note right of SimGate
+  External hardware simulator.
+  Replaces physical fingerprint
+  scanner at gym entrance.
+end note
+
+@enduml
+
+
+@startuml Seq01_Authentication_Login
+title Seq 01 — Authentication & Session Bootstrap
+
+actor User
+participant "LoginForm\n(frontend)" as FE
+participant "AuthContext\n+ apiClient" as Auth
+participant "AuthenticationController" as API
+database "Database" as DB
+
+== Login ==
+User -> FE : Enter email + password
+FE -> Auth : login(email, password)
+Auth -> API : POST /api/authentication/login\n{ email, password }
+API -> DB : Validate user, roles, member/instructor status
+alt Invalid credentials / terminated / pending activation
+  API --> Auth : 401 { message }
+  Auth --> FE : Show error
+else Success
+  API --> Auth : 200 { token, userId, email, fullName, roles[] }
+  Auth -> Auth : Store JWT in localStorage
+  Auth -> Auth : Map role → admin | instructor | member
+  Auth --> FE : signIn(user)
+  FE --> User : Navigate to role dashboard
+end
+
+== App bootstrap (returning visit) ==
+User -> FE : Open portal URL
+FE -> Auth : AuthProvider mount
+Auth -> API : GET /api/authentication/me\nAuthorization: Bearer {token}
+alt Token valid
+  API --> Auth : 200 { userId, email, roles[], memberId?, instructorId? }
+  Auth --> FE : Restore session
+else Token invalid / expired
+  API --> Auth : 401
+  Auth -> Auth : Clear token
+  Auth --> FE : Redirect to login
+end
+
+@enduml
+
+
+@startuml Seq02_Member_Registration_Payment
+title Seq 02 — Member Registration & Membership Payment
+
+actor "Prospective Member" as User
+participant "Join / Register\n(frontend)" as FE
+participant "PaymentPage\n(frontend)" as PayFE
+participant "MembershipController" as Membership
+participant "PaymentGatewayController" as PayGW
+database "Database" as DB
+actor "PayHere\n<<external>>" as PayHere
+
+User -> FE : Select membership package
+FE -> Membership : GET /api/public/packages
+Membership --> FE : Package list
+
+User -> FE : Submit registration form
+FE -> Membership : POST /api/membership/register\n{ email, password, profile, packageId }
+Membership -> DB : Create User + Member (pending activation)
+Membership --> FE : 200 { memberId, identificationNumber, packageId }
+
+FE -> PayGW : POST /api/payment-gateway/membership/init\n?memberId=&packageId=\n{ amountLKR, email }
+PayGW -> DB : Create Payment (Pending, purpose=Membership)
+PayGW --> FE : { paymentReference, checkoutUrl }
+FE -> FE : Save pending state (sessionStorage)
+FE --> PayFE : Navigate to /payment
+
+alt Mock checkout (dev UI)
+  User -> PayFE : Confirm payment (mock)
+  PayFE -> PayGW : POST /api/payment-gateway/membership/confirm\n?packageId=\n{ paymentReference, gatewayTransactionId }
+else Live PayHere
+  PayHere -> PayGW : POST /api/payment-gateway/webhook/payhere
+end
+
+PayGW -> DB : Mark Payment Completed
+PayGW -> DB : Activate membership (StartDate, EndDate)
+PayGW --> PayFE : 200 { message: "Membership activated." }
+PayFE --> User : Success → redirect to login
+
+@enduml
+
+
+@startuml Seq03_Fingerprint_Enrollment
+title Seq 03 — Fingerprint Enrollment (Admin via Simulator)
+
+actor Admin
+participant "Fingerprint Simulator\nEnrollPanel :5190" as Sim
+participant "AuthenticationController" as AuthAPI
+participant "MembershipController" as Membership
+participant "AttendanceController" as Attendance
+database "Database" as DB
+
+Admin -> Sim : Open simulator & sign in
+Sim -> AuthAPI : POST /api/authentication/login
+AuthAPI --> Sim : 200 { token } (Admin role required)
+Sim -> Sim : Store JWT (sessionStorage)
+
+Sim -> Membership : GET /api/membership/members?section=all
+Membership --> Sim : Member list
+Sim -> Membership : GET /api/membership/instructors?section=all
+Membership --> Sim : Instructor list
+
+Admin -> Sim : Select person + generate PIN template
+Admin -> Sim : Save fingerprint to ERP
+
+alt Member enrollment
+  Sim -> Attendance : POST /api/attendance/fingerprint/member/activate\n{ memberId, fingerprintTemplateId }
+  Attendance -> DB : Set FingerprintTemplateId,\nIsFingerprintActivated = true
+  Attendance --> Sim : 200 { message }
+else Instructor enrollment
+  Sim -> Attendance : POST /api/attendance/fingerprint/instructor/activate\n{ instructorId, fingerprintTemplateId }
+  Attendance -> DB : Activate instructor fingerprint
+  Attendance --> Sim : 200 { message }
+end
+
+Sim --> Admin : Enrollment success
+
+@enduml
+
+
+@startuml Seq04_Fingerprint_Gym_Entry
+title Seq 04 — Fingerprint Gym Entry (Gate Scan)
+
+actor "Member / Instructor" as Person
+participant "Fingerprint Simulator\nGateScanPanel :5190\n<<external>>" as Sim
+participant "AttendanceController" as Attendance
+participant "AttendanceService" as Service
+database "Database" as DB
+
+Person -> Sim : Tap fingerprint pad / select enrolled PIN
+Sim -> Attendance : POST /api/attendance/scan\n{ fingerprintTemplateId, scannerDeviceId: "SIM-GATE-01" }\n(no authentication)
+
+Attendance -> Service : ProcessScanAsync()
+Service -> DB : Lookup Member or Instructor by template
+
+alt Member scan
+  Service -> DB : Check: fingerprint activated,\nnot terminated, user active,\nactive membership exists
+else Instructor scan
+  Service -> DB : Check: fingerprint activated,\nnot terminated, user active
+else Unknown template
+  Service -> DB : Log denied attempt
+  Attendance --> Sim : { accessGranted: false, message }
+end
+
+Service -> DB : INSERT AttendanceLog\n(accessGranted, validationMessage, loggedAt)
+Attendance --> Sim : { accessGranted, message, personName, personType, loggedAt }
+Sim --> Person : Display GRANTED / DENIED
+
+note over Sim, Attendance
+  Admin can review scans via:
+  • Simulator Logs tab → GET /api/attendance/logs/today
+  • Admin Portal → GET /api/attendance/logs/admin?date=
+  Member/Instructor → GET /api/attendance/logs/me?year=&month=
+end note
+
+@enduml
+
+
+@startuml Seq05_VIP_Session_Lifecycle
+title Seq 05 — VIP Session (Request → Approve → Enroll)
+
+actor Instructor
+actor Admin
+actor Member
+participant "Instructor Portal\n(frontend)" as IFE
+participant "Admin Portal\n(frontend)" as AFE
+participant "Member Portal\n(frontend)" as MFE
+participant "Public Classes\n(frontend)" as PFE
+participant "SpecialSessionController" as Sessions
+participant "PaymentGatewayController" as PayGW
+database "Database" as DB
+
+== Instructor submits VIP session ==
+Instructor -> IFE : Create session request
+IFE -> Sessions : POST /api/special-sessions/instructor/request\n{ title, times, fee, capacity }
+Sessions -> DB : INSERT SpecialSession (Status=Pending)
+Sessions --> IFE : 200 SpecialSessionDto
+
+== Admin approves ==
+Admin -> AFE : Review pending sessions
+AFE -> Sessions : GET /api/special-sessions/admin?status=Pending
+Admin -> AFE : Accept session
+AFE -> Sessions : POST /api/special-sessions/admin/{id}/accept
+Sessions -> DB : UPDATE Status=Accepted
+Sessions --> AFE : 200 Accepted session
+
+== Public schedule visibility ==
+PFE -> Sessions : GET /api/public/vip-sessions?date=YYYY-MM-DD
+Sessions --> PFE : Accepted sessions for date (read-only)
+
+== Member enrolls with payment ==
+Member -> MFE : Browse available VIP sessions
+MFE -> Sessions : GET /api/special-sessions/member/available
+Member -> MFE : Enroll in session
+MFE -> PayGW : POST /api/payment-gateway/session/init?sessionId=
+PayGW -> DB : Create pending Payment
+PayGW --> MFE : { paymentReference }
+MFE -> MFE : Navigate to /payment
+MFE -> PayGW : POST /api/payment-gateway/session/confirm?sessionId=\n{ paymentReference, gatewayTransactionId }
+PayGW -> DB : Complete payment + INSERT SpecialSessionEnrollment
+PayGW --> MFE : 200 success
+MFE -> Sessions : GET /api/special-sessions/member/mine
+Sessions --> MFE : Enrolled sessions
+
+@enduml
+
+
+@startuml Seq06_General_Classes
+title Seq 06 — General Classes Schedule
+
+actor Visitor
+actor Member
+actor Instructor
+actor Admin
+participant "Public / Member\nClasses UI" as PubFE
+participant "Instructor Portal" as IFE
+participant "Admin Portal" as AFE
+participant "PublicController" as PublicAPI
+participant "GeneralClassInstructorController" as InstAPI
+participant "GeneralClassAdminController" as AdminAPI
+database "Database" as DB
+
+== Public & member weekly schedule ==
+Visitor -> PubFE : Open Classes page
+PubFE -> PublicAPI : GET /api/public/general-classes
+PublicAPI -> DB : Active recurring classes
+PublicAPI --> PubFE : Weekly timetable
+PubFE -> PublicAPI : GET /api/public/vip-sessions?date=
+PublicAPI --> PubFE : VIP sessions for selected date
+PubFE --> Visitor : Render schedule (poll every 30s)
+
+Member -> PubFE : Member → General Classes
+note right of PubFE : Same public endpoints;\nmember view is read-only schedule
+
+== Instructor — my assigned classes ==
+Instructor -> IFE : My General Classes
+IFE -> InstAPI : GET /api/general-classes/instructor\n(Instructor JWT)
+InstAPI -> DB : Classes where InstructorId = logged-in instructor
+InstAPI --> IFE : Assigned classes only
+IFE --> Instructor : Calendar + class-type filter
+
+== Admin CRUD ==
+Admin -> AFE : General Classes management
+AFE -> AdminAPI : GET /api/admin/general-classes
+Admin -> AFE : Create / edit / deactivate
+AFE -> AdminAPI : POST | PUT | DELETE /api/admin/general-classes/{id}
+AdminAPI -> DB : Persist GeneralClass rows
+AdminAPI --> AFE : Updated record
+
+@enduml
+
+
+@startuml Seq07_POS_Sale
+title Seq 07 — Admin POS (In-Gym Retail Sale)
+
+actor Admin
+participant "AdminPOSPage\n(frontend)" as FE
+participant "InventoryController" as Inventory
+participant "PosController" as POS
+database "Database" as DB
+
+Admin -> FE : Open POS (Admin JWT)
+FE -> Inventory : GET /api/inventory
+Inventory -> DB : Products + stock on hand
+Inventory --> FE : Product catalog
+
+Admin -> FE : Add items to cart\nselect Cash or Card
+FE -> POS : POST /api/pos/sale\n{ items[{ productId, quantity }], paymentMethod, memberId? }
+POS -> DB : Validate stock
+POS -> DB : Decrement InventoryItem.QuantityOnHand
+POS -> DB : INSERT Order + OrderItems + Payment
+POS --> FE : 200 { billReference, items, totalLKR }
+FE -> Inventory : GET /api/inventory (refresh)
+FE --> Admin : Print / show bill
+
+@enduml
+
+
+@startuml Seq08_Public_Contact_Inquiries
+title Seq 08 — Public Website Contact & Admin Inquiries
+
+actor Visitor
+actor Admin
+participant "ContactForm\n(frontend)" as FE
+participant "PublicController" as PublicAPI
+participant "VisitorInquiryController" as AdminAPI
+database "Database" as DB
+
+Visitor -> FE : Fill contact form
+FE -> PublicAPI : POST /api/public/contact\n{ fullName, email, phone?, subject, message }
+PublicAPI -> DB : INSERT ContactMessage
+PublicAPI --> FE : 200 { message: "Thank you..." }
+FE --> Visitor : Success confirmation
+
+Admin -> AdminAPI : GET /api/admin/visitor-inquiries\n(Admin JWT)
+AdminAPI -> DB : SELECT ContactMessage (unread/read)
+AdminAPI --> Admin : Visitor inquiry list
+
+@enduml
+
+
+@startuml Seq09_Workout_Meal_Plans
+title Seq 09 — Workout / Meal Plan Request & Approval
+
+actor Member
+actor Instructor
+participant "Member Portal\nPlans UI" as MFE
+participant "Instructor Portal\nPlans UI" as IFE
+participant "MemberPlanController" as Plans
+database "Database" as DB
+
+Member -> MFE : Open Workout / Meal Plans
+MFE -> Plans : GET /api/member-plans/instructors
+Plans --> MFE : Instructor options
+
+Member -> MFE : Submit plan request
+MFE -> Plans : POST /api/member-plans/member/requests\n{ instructorId, planCategory, memberNote? }
+Plans -> DB : INSERT MemberPlanRequest (Status=Pending)
+Plans --> MFE : 200 request DTO
+
+Instructor -> IFE : View pending requests
+IFE -> Plans : GET /api/member-plans/instructor/pending
+Instructor -> IFE : Approve with plan content
+IFE -> Plans : POST /api/member-plans/instructor/pending/{id}/approve\n{ description, notes? }
+Plans -> DB : INSERT MemberFitnessPlan\nUPDATE request Status=Approved
+Plans --> IFE : 200 plan DTO
+
+Member -> MFE : View my plans
+MFE -> Plans : GET /api/member-plans/member
+MFE -> Plans : GET /api/member-plans/member/{planId}
+Plans --> MFE : Approved workout/meal plans
+
+@enduml
+
+
+@startuml Seq10_Logout_Confirmation
+title Seq 10 — Portal Logout (with confirmation)
+
+actor User
+participant "Portal Sidebar\n(frontend)" as FE
+participant "PortalConfirmModal" as Modal
+participant "AuthContext" as Auth
+
+User -> FE : Click Logout
+FE -> Modal : Show "Do you wish to log out?"
+alt User clicks No
+  User -> Modal : No
+  Modal --> FE : Close modal (stay logged in)
+else User clicks Yes
+  User -> Modal : Yes
+  Modal -> Auth : signOut()
+  Auth -> Auth : Remove JWT from localStorage
+  FE --> User : Navigate to public home (/)
+end
+
+note right of Modal
+  Same flow in Member,
+  Instructor, and Admin
+  dashboard layouts.
+end note
+
+@enduml

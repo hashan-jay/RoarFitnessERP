@@ -33,12 +33,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpecialSession> SpecialSessions => Set<SpecialSession>();
     public DbSet<SpecialSessionEnrollment> SpecialSessionEnrollments => Set<SpecialSessionEnrollment>();
     public DbSet<MemberFitnessPlan> MemberFitnessPlans => Set<MemberFitnessPlan>();
+    public DbSet<MemberPlanRequest> MemberPlanRequests => Set<MemberPlanRequest>();
+    public DbSet<GeneralClass> GeneralClasses => Set<GeneralClass>();
 
     /// <summary>Creates the database if needed, applies schema migrations, and seeds reference data.</summary>
     public async Task InitializeAsync()
     {
         await EnsureDatabaseAsync();
         await SeedAsync();
+        await EnsureExpiredTestMembersAsync();
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -190,7 +193,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<MemberFitnessPlan>()
+            .HasOne(p => p.Request)
+            .WithOne(r => r.Plan)
+            .HasForeignKey<MemberFitnessPlan>(p => p.RequestId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<MemberFitnessPlan>()
             .HasIndex(p => new { p.MemberId, p.UpdatedAt });
+
+        modelBuilder.Entity<MemberPlanRequest>()
+            .HasOne(r => r.Member)
+            .WithMany()
+            .HasForeignKey(r => r.MemberId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<MemberPlanRequest>()
+            .HasOne(r => r.Instructor)
+            .WithMany()
+            .HasForeignKey(r => r.InstructorId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<MemberPlanRequest>()
+            .HasIndex(r => new { r.InstructorId, r.Status });
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
@@ -329,6 +353,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.PlanId);
             e.Property(x => x.PlanId).UseIdentityColumn(1, 1);
         });
+        modelBuilder.Entity<MemberPlanRequest>(e =>
+        {
+            e.HasKey(x => x.RequestId);
+            e.Property(x => x.RequestId).UseIdentityColumn(1, 1);
+        });
+        modelBuilder.Entity<GeneralClass>(e =>
+        {
+            e.ToTable("generalClasses");
+            e.HasKey(x => x.GeneralClassId);
+            e.Property(x => x.GeneralClassId).UseIdentityColumn(1, 1);
+            e.HasOne(x => x.Instructor)
+                .WithMany()
+                .HasForeignKey(x => x.InstructorId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     private async Task AssignIdentificationNumbersAsync(CancellationToken cancellationToken)
@@ -446,22 +485,247 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         await EnsureSessionSchemaAsync();
         await EnsureMemberPlanSchemaAsync();
+        await EnsureMemberPlanRequestSchemaAsync();
         await EnsureOrderBillSchemaAsync();
         await EnsureProductSchemaAsync();
-        await EnsureProfilePhotoSchemaAsync();
+        await EnsureInstructorPublicProfileSchemaAsync();
+        await EnsureMemberTerminationSchemaAsync();
+        await EnsureInstructorTerminationSchemaAsync();
         await EnsureProductCategoriesAsync();
         await EnsurePackageSchemaAsync();
         await EnsureProductsAsync();
+        await EnsureContactMessagesSchemaAsync();
+        await EnsureGeneralClassesSchemaAsync();
     }
 
-    /// <summary>Adds missing product columns (ImageUrl, IsActive) on existing databases.</summary>
-    private async Task EnsureProfilePhotoSchemaAsync()
+    /// <summary>Creates ContactMessages table on older databases without dropping existing data.</summary>
+    private async Task EnsureContactMessagesSchemaAsync()
     {
         await Database.ExecuteSqlRawAsync("""
-            IF COL_LENGTH('Members', 'ProfilePhotoUrl') IS NULL
-                ALTER TABLE Members ADD ProfilePhotoUrl NVARCHAR(500) NULL;
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'ContactMessages')
+            BEGIN
+                CREATE TABLE [ContactMessages] (
+                    [ContactMessageId] int NOT NULL IDENTITY,
+                    [FullName] nvarchar(150) NOT NULL,
+                    [Email] nvarchar(256) NOT NULL,
+                    [Phone] nvarchar(20) NULL,
+                    [Subject] nvarchar(200) NOT NULL CONSTRAINT [DF_ContactMessages_Subject] DEFAULT 'Website inquiry',
+                    [Message] nvarchar(2000) NOT NULL,
+                    [IsRead] bit NOT NULL CONSTRAINT [DF_ContactMessages_IsRead] DEFAULT 0,
+                    [SubmittedAt] datetime2 NOT NULL,
+                    CONSTRAINT [PK_ContactMessages] PRIMARY KEY ([ContactMessageId])
+                );
+            END
+            """);
+    }
+
+    private async Task EnsureGeneralClassesSchemaAsync()
+    {
+        await Database.ExecuteSqlRawAsync("""
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'generalClasses')
+            BEGIN
+                CREATE TABLE [generalClasses] (
+                    [GeneralClassId] int NOT NULL IDENTITY,
+                    [Title] nvarchar(150) NOT NULL,
+                    [Category] nvarchar(50) NOT NULL,
+                    [Description] nvarchar(2000) NOT NULL,
+                    [InstructorId] int NOT NULL,
+                    [Weekday] int NOT NULL,
+                    [TimeRange] nvarchar(50) NOT NULL,
+                    [Duration] nvarchar(30) NOT NULL,
+                    [Studio] nvarchar(120) NOT NULL,
+                    [IsActive] bit NOT NULL CONSTRAINT [DF_generalClasses_IsActive] DEFAULT 1,
+                    [CreatedAt] datetime2 NOT NULL,
+                    [UpdatedAt] datetime2 NOT NULL,
+                    CONSTRAINT [PK_generalClasses] PRIMARY KEY ([GeneralClassId]),
+                    CONSTRAINT [FK_generalClasses_Instructors_InstructorId] FOREIGN KEY ([InstructorId]) REFERENCES [Instructors] ([InstructorId])
+                );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('generalClasses', 'Title') IS NULL AND COL_LENGTH('generalClasses', 'ClassName') IS NOT NULL
+                    EXEC sp_rename 'generalClasses.ClassName', 'Title', 'COLUMN';
+                IF COL_LENGTH('generalClasses', 'Category') IS NULL AND COL_LENGTH('generalClasses', 'ClassType') IS NOT NULL
+                    EXEC sp_rename 'generalClasses.ClassType', 'Category', 'COLUMN';
+                IF COL_LENGTH('generalClasses', 'ClassId') IS NOT NULL
+                    ALTER TABLE [generalClasses] DROP COLUMN [ClassId];
+            END
+            """);
+
+        if (!await GeneralClasses.AnyAsync())
+            await SeedGeneralClassesIfEmptyAsync();
+        else
+            await EnsureZumbaGeneralClassesAsync();
+    }
+
+    private async Task SeedGeneralClassesIfEmptyAsync()
+    {
+        var instructors = await Instructors
+            .Include(i => i.User)
+            .Where(i => !i.IsTerminated)
+            .ToListAsync();
+
+        if (instructors.Count == 0)
+            return;
+
+        var assignedCounts = instructors.ToDictionary(i => i.InstructorId, _ => 0);
+        var now = AppTime.Now();
+
+        foreach (var slot in GeneralClassSeedData.DefaultSlots)
+        {
+            var instructor = PickInstructorForClass(instructors, slot.ClassKey, assignedCounts);
+            assignedCounts[instructor.InstructorId]++;
+
+            GeneralClasses.Add(new GeneralClass
+            {
+                Title = slot.Title,
+                Category = slot.Category,
+                Description = slot.Description,
+                InstructorId = instructor.InstructorId,
+                Weekday = slot.Weekday,
+                TimeRange = slot.TimeRange,
+                Duration = slot.Duration,
+                Studio = slot.Studio,
+                IsActive = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        foreach (var instructor in instructors.Where(i => assignedCounts[i.InstructorId] == 0))
+        {
+            GeneralClasses.Add(new GeneralClass
+            {
+                Title = "Cardio Classes",
+                Category = "Cardio",
+                Description = "High-energy sessions designed to boost endurance, burn calories, and improve cardiovascular health.",
+                InstructorId = instructor.InstructorId,
+                Weekday = 1,
+                TimeRange = "09:00 - 09:45",
+                Duration = "45 min",
+                Studio = "Cardio Hall",
+                IsActive = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        await SaveChangesAsync();
+    }
+
+    /// <summary>Adds default Zumba classes when none exist yet (safe for existing databases).</summary>
+    private async Task EnsureZumbaGeneralClassesAsync()
+    {
+        if (await GeneralClasses.AnyAsync(gc => gc.Category == "Zumba"))
+            return;
+
+        var instructors = await Instructors
+            .Where(i => !i.IsTerminated)
+            .ToListAsync();
+
+        if (instructors.Count == 0)
+            return;
+
+        var assignedCounts = instructors.ToDictionary(i => i.InstructorId, _ => 0);
+        var now = AppTime.Now();
+        var zumbaSlots = GeneralClassSeedData.DefaultSlots
+            .Where(slot => slot.ClassKey == "zumba")
+            .ToList();
+
+        foreach (var slot in zumbaSlots)
+        {
+            var instructor = PickInstructorForClass(instructors, slot.ClassKey, assignedCounts);
+            assignedCounts[instructor.InstructorId]++;
+
+            GeneralClasses.Add(new GeneralClass
+            {
+                Title = slot.Title,
+                Category = slot.Category,
+                Description = slot.Description,
+                InstructorId = instructor.InstructorId,
+                Weekday = slot.Weekday,
+                TimeRange = slot.TimeRange,
+                Duration = slot.Duration,
+                Studio = slot.Studio,
+                IsActive = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        await SaveChangesAsync();
+    }
+
+    private static Instructor PickInstructorForClass(
+        IReadOnlyList<Instructor> instructors,
+        string classKey,
+        IReadOnlyDictionary<int, int> assignedCounts)
+    {
+        var keywords = GeneralClassSeedData.SkillKeywords.TryGetValue(classKey, out var values)
+            ? values
+            : [];
+
+        return instructors
+            .Select(instructor =>
+            {
+                var haystack = string.Join(
+                    ' ',
+                    instructor.Specialization,
+                    instructor.Speciality1,
+                    instructor.Speciality2,
+                    instructor.Speciality3).ToLowerInvariant();
+                var score = keywords.Count(keyword => haystack.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                return new { instructor, score };
+            })
+            .OrderByDescending(row => row.score)
+            .ThenBy(row => assignedCounts.TryGetValue(row.instructor.InstructorId, out var count) ? count : 0)
+            .ThenBy(row => row.instructor.InstructorId)
+            .First()
+            .instructor;
+    }
+
+    /// <summary>Adds public website profile fields for instructors.</summary>
+    private async Task EnsureInstructorPublicProfileSchemaAsync()
+    {
+        await Database.ExecuteSqlRawAsync("""
+            IF COL_LENGTH('Instructors', 'YearsExperience') IS NULL
+                ALTER TABLE Instructors ADD YearsExperience INT NOT NULL CONSTRAINT DF_Instructors_YearsExperience DEFAULT 0;
+            IF COL_LENGTH('Instructors', 'Qualification1') IS NULL
+                ALTER TABLE Instructors ADD Qualification1 NVARCHAR(120) NULL;
+            IF COL_LENGTH('Instructors', 'Qualification2') IS NULL
+                ALTER TABLE Instructors ADD Qualification2 NVARCHAR(120) NULL;
+            IF COL_LENGTH('Instructors', 'Speciality1') IS NULL
+                ALTER TABLE Instructors ADD Speciality1 NVARCHAR(120) NULL;
+            IF COL_LENGTH('Instructors', 'Speciality2') IS NULL
+                ALTER TABLE Instructors ADD Speciality2 NVARCHAR(120) NULL;
+            IF COL_LENGTH('Instructors', 'Speciality3') IS NULL
+                ALTER TABLE Instructors ADD Speciality3 NVARCHAR(120) NULL;
             IF COL_LENGTH('Instructors', 'ProfilePhotoUrl') IS NULL
                 ALTER TABLE Instructors ADD ProfilePhotoUrl NVARCHAR(500) NULL;
+            """);
+    }
+
+    /// <summary>Adds member termination columns for admin lifecycle management.</summary>
+    private async Task EnsureMemberTerminationSchemaAsync()
+    {
+        await Database.ExecuteSqlRawAsync("""
+            IF COL_LENGTH('Members', 'IsTerminated') IS NULL
+                ALTER TABLE Members ADD IsTerminated BIT NOT NULL CONSTRAINT DF_Members_IsTerminated DEFAULT 0;
+            IF COL_LENGTH('Members', 'TerminatedAt') IS NULL
+                ALTER TABLE Members ADD TerminatedAt DATETIME2 NULL;
+            """);
+    }
+
+    /// <summary>Adds instructor termination and profile columns for admin lifecycle management.</summary>
+    private async Task EnsureInstructorTerminationSchemaAsync()
+    {
+        await Database.ExecuteSqlRawAsync("""
+            IF COL_LENGTH('Instructors', 'IsTerminated') IS NULL
+                ALTER TABLE Instructors ADD IsTerminated BIT NOT NULL CONSTRAINT DF_Instructors_IsTerminated DEFAULT 0;
+            IF COL_LENGTH('Instructors', 'TerminatedAt') IS NULL
+                ALTER TABLE Instructors ADD TerminatedAt DATETIME2 NULL;
+            IF COL_LENGTH('Instructors', 'Bio') IS NULL
+                ALTER TABLE Instructors ADD Bio NVARCHAR(MAX) NULL;
             """);
     }
 
@@ -473,6 +737,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 ALTER TABLE Products ADD ImageUrl NVARCHAR(500) NULL;
             IF COL_LENGTH('Products', 'IsActive') IS NULL
                 ALTER TABLE Products ADD IsActive BIT NOT NULL CONSTRAINT DF_Products_IsActive DEFAULT 1;
+            IF COL_LENGTH('Products', 'IsAvailableOnline') IS NOT NULL
+            BEGIN
+                UPDATE Products SET IsAvailableOnline = 1 WHERE IsAvailableOnline IS NULL;
+            END
+            IF COL_LENGTH('Products', 'IsAvailableOnline') IS NULL
+                ALTER TABLE Products ADD IsAvailableOnline BIT NOT NULL CONSTRAINT DF_Products_IsAvailableOnline DEFAULT 1;
             """);
     }
 
@@ -634,29 +904,23 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         await command.ExecuteNonQueryAsync();
     }
 
-    /// <summary>Creates the MemberFitnessPlans table when absent.</summary>
+    /// <summary>Creates or migrates the MemberFitnessPlans table.</summary>
     private async Task EnsureMemberPlanSchemaAsync()
     {
-        if (await MemberPlanSchemaExistsAsync())
-            return;
-
         var connection = Database.GetDbConnection();
         if (connection.State != System.Data.ConnectionState.Open)
             await connection.OpenAsync();
 
-        await using var command = connection.CreateCommand();
-        command.CommandTimeout = 120;
-        command.CommandText = """
+        await ExecuteSchemaCommandAsync(connection, """
             IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MemberFitnessPlans')
             BEGIN
                 CREATE TABLE [MemberFitnessPlans] (
                     [PlanId] int NOT NULL IDENTITY,
+                    [RequestId] int NULL,
                     [MemberId] int NOT NULL,
                     [InstructorId] int NOT NULL,
-                    [Title] nvarchar(max) NOT NULL,
-                    [FitnessGoal] nvarchar(max) NOT NULL,
-                    [WorkoutPlan] nvarchar(max) NOT NULL,
-                    [MealPlan] nvarchar(max) NOT NULL,
+                    [PlanCategory] nvarchar(50) NOT NULL,
+                    [Description] nvarchar(max) NOT NULL,
                     [Notes] nvarchar(max) NULL,
                     [CreatedAt] datetime2 NOT NULL,
                     [UpdatedAt] datetime2 NOT NULL,
@@ -665,6 +929,121 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                     CONSTRAINT [FK_MemberFitnessPlans_Instructors_InstructorId] FOREIGN KEY ([InstructorId]) REFERENCES [Instructors] ([InstructorId])
                 );
                 CREATE INDEX [IX_MemberFitnessPlans_MemberId_UpdatedAt] ON [MemberFitnessPlans] ([MemberId], [UpdatedAt]);
+            END
+            """);
+
+        await ExecuteSchemaCommandAsync(connection, """
+            IF COL_LENGTH('MemberFitnessPlans', 'Title') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH('MemberFitnessPlans', 'PlanCategory') IS NULL
+                    ALTER TABLE [MemberFitnessPlans] ADD [PlanCategory] nvarchar(50) NOT NULL CONSTRAINT [DF_MemberFitnessPlans_PlanCategory] DEFAULT 'Workout';
+                IF COL_LENGTH('MemberFitnessPlans', 'Goal') IS NULL
+                    ALTER TABLE [MemberFitnessPlans] ADD [Goal] nvarchar(50) NOT NULL CONSTRAINT [DF_MemberFitnessPlans_Goal] DEFAULT 'Fat Loss';
+                IF COL_LENGTH('MemberFitnessPlans', 'Description') IS NULL
+                    ALTER TABLE [MemberFitnessPlans] ADD [Description] nvarchar(max) NOT NULL CONSTRAINT [DF_MemberFitnessPlans_Description] DEFAULT '';
+                IF COL_LENGTH('MemberFitnessPlans', 'RequestId') IS NULL
+                    ALTER TABLE [MemberFitnessPlans] ADD [RequestId] int NULL;
+            END
+            """);
+
+        await ExecuteSchemaCommandAsync(connection, """
+            IF COL_LENGTH('MemberFitnessPlans', 'WorkoutPlan') IS NOT NULL
+               AND COL_LENGTH('MemberFitnessPlans', 'Description') IS NOT NULL
+                EXEC(N'
+                    UPDATE [MemberFitnessPlans]
+                    SET [Description] = CASE
+                        WHEN [WorkoutPlan] IS NOT NULL AND LTRIM(RTRIM([WorkoutPlan])) <> '''' THEN [WorkoutPlan]
+                        ELSE ISNULL([MealPlan], '''')
+                    END
+                    WHERE [Description] = '''';
+                ');
+            """);
+
+        await ExecuteSchemaCommandAsync(connection, """
+            IF EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = 'DF_MemberFitnessPlans_PlanCategory')
+                ALTER TABLE [MemberFitnessPlans] DROP CONSTRAINT [DF_MemberFitnessPlans_PlanCategory];
+            IF EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = 'DF_MemberFitnessPlans_Goal')
+                ALTER TABLE [MemberFitnessPlans] DROP CONSTRAINT [DF_MemberFitnessPlans_Goal];
+            IF EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = 'DF_MemberFitnessPlans_Description')
+                ALTER TABLE [MemberFitnessPlans] DROP CONSTRAINT [DF_MemberFitnessPlans_Description];
+
+            IF COL_LENGTH('MemberFitnessPlans', 'Title') IS NOT NULL
+                EXEC('ALTER TABLE [MemberFitnessPlans] DROP COLUMN [Title]');
+            IF COL_LENGTH('MemberFitnessPlans', 'FitnessGoal') IS NOT NULL
+                EXEC('ALTER TABLE [MemberFitnessPlans] DROP COLUMN [FitnessGoal]');
+            IF COL_LENGTH('MemberFitnessPlans', 'WorkoutPlan') IS NOT NULL
+                EXEC('ALTER TABLE [MemberFitnessPlans] DROP COLUMN [WorkoutPlan]');
+            IF COL_LENGTH('MemberFitnessPlans', 'MealPlan') IS NOT NULL
+                EXEC('ALTER TABLE [MemberFitnessPlans] DROP COLUMN [MealPlan]');
+            IF COL_LENGTH('MemberFitnessPlans', 'Goal') IS NOT NULL
+            BEGIN
+                IF EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = 'DF_MemberFitnessPlans_Goal')
+                    ALTER TABLE [MemberFitnessPlans] DROP CONSTRAINT [DF_MemberFitnessPlans_Goal];
+                ALTER TABLE [MemberFitnessPlans] DROP COLUMN [Goal];
+            END
+            """);
+    }
+
+    private static async Task ExecuteSchemaCommandAsync(System.Data.Common.DbConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandTimeout = 120;
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Creates the MemberPlanRequests table and links it to approved plans.</summary>
+    private async Task EnsureMemberPlanRequestSchemaAsync()
+    {
+        var connection = Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandTimeout = 120;
+        command.CommandText = """
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MemberPlanRequests')
+            BEGIN
+                CREATE TABLE [MemberPlanRequests] (
+                    [RequestId] int NOT NULL IDENTITY,
+                    [MemberId] int NOT NULL,
+                    [InstructorId] int NOT NULL,
+                    [PlanCategory] nvarchar(50) NOT NULL,
+                    [MemberNote] nvarchar(max) NULL,
+                    [Status] nvarchar(50) NOT NULL CONSTRAINT [DF_MemberPlanRequests_Status] DEFAULT 'Pending',
+                    [PlanId] int NULL,
+                    [CreatedAt] datetime2 NOT NULL,
+                    [ApprovedAt] datetime2 NULL,
+                    CONSTRAINT [PK_MemberPlanRequests] PRIMARY KEY ([RequestId]),
+                    CONSTRAINT [FK_MemberPlanRequests_Members_MemberId] FOREIGN KEY ([MemberId]) REFERENCES [Members] ([MemberId]),
+                    CONSTRAINT [FK_MemberPlanRequests_Instructors_InstructorId] FOREIGN KEY ([InstructorId]) REFERENCES [Instructors] ([InstructorId]),
+                    CONSTRAINT [FK_MemberPlanRequests_MemberFitnessPlans_PlanId] FOREIGN KEY ([PlanId]) REFERENCES [MemberFitnessPlans] ([PlanId])
+                );
+                CREATE INDEX [IX_MemberPlanRequests_InstructorId_Status] ON [MemberPlanRequests] ([InstructorId], [Status]);
+            END
+
+            IF COL_LENGTH('MemberPlanRequests', 'MemberNote') IS NULL
+                ALTER TABLE [MemberPlanRequests] ADD [MemberNote] nvarchar(max) NULL;
+
+            IF COL_LENGTH('MemberPlanRequests', 'Goal') IS NOT NULL
+            BEGIN
+                EXEC(N'
+                    UPDATE [MemberPlanRequests]
+                    SET [MemberNote] = [Goal]
+                    WHERE ([MemberNote] IS NULL OR LTRIM(RTRIM([MemberNote])) = '''')
+                      AND [Goal] IS NOT NULL
+                      AND LTRIM(RTRIM([Goal])) <> '''';
+                ');
+                ALTER TABLE [MemberPlanRequests] DROP COLUMN [Goal];
+            END
+
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_MemberFitnessPlans_MemberPlanRequests_RequestId'
+            ) AND COL_LENGTH('MemberFitnessPlans', 'RequestId') IS NOT NULL
+            BEGIN
+                ALTER TABLE [MemberFitnessPlans]
+                ADD CONSTRAINT [FK_MemberFitnessPlans_MemberPlanRequests_RequestId]
+                FOREIGN KEY ([RequestId]) REFERENCES [MemberPlanRequests] ([RequestId]);
             END
             """;
         await command.ExecuteNonQueryAsync();
@@ -921,4 +1300,110 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         await SaveChangesAsync();
     }
+
+    /// <summary>Seeds five inactive members with expired memberships for admin renewal testing.</summary>
+    private async Task EnsureExpiredTestMembersAsync()
+    {
+        const string markerDomain = "@expired-test.roarfitness.lk";
+        if (await Users.AnyAsync(u => u.Email.EndsWith(markerDomain)))
+            return;
+
+        var memberRole = await Roles.FirstOrDefaultAsync(r => r.RoleName == "Member");
+        if (memberRole is null)
+            return;
+
+        var packages = await MembershipPackages.Where(p => p.IsActive).OrderBy(p => p.PackageId).ToListAsync();
+        if (packages.Count == 0)
+            return;
+
+        var today = ProfileHelper.GetAppToday();
+        var testMembers = new[]
+        {
+            new ExpiredTestMemberSeed(
+                "Kasun", "Wickramasinghe", $"kasun.wickramasinghe{markerDomain}", "+94771234001",
+                "951234567V", new DateTime(1995, 3, 12), "Male", "12 Ward Place, Colombo 07", "Colombo", "Sri Lanka",
+                "Sunil Wickramasinghe", "+94771234002", today.AddDays(-6), true, 0),
+            new ExpiredTestMemberSeed(
+                "Nimali", "Jayawardena", $"nimali.jayawardena{markerDomain}", "+94772345001",
+                "962345678V", new DateTime(1996, 7, 24), "Female", "45 Lake Drive, Nugegoda", "Nugegoda", "Sri Lanka",
+                "Rohan Jayawardena", "+94772345002", today.AddDays(-19), false, 1),
+            new ExpiredTestMemberSeed(
+                "Tharindu", "Silva", $"tharindu.silva{markerDomain}", "+94773456001",
+                "973456789V", new DateTime(1997, 11, 8), "Male", "8 Station Road, Dehiwala", "Dehiwala", "Sri Lanka",
+                "Kumari Silva", "+94773456002", today.AddDays(-35), true, 0),
+            new ExpiredTestMemberSeed(
+                "Ayeshi", "Fernando", $"ayeshi.fernando{markerDomain}", "+94774567001",
+                "984567890V", new DateTime(1998, 1, 30), "Female", "22 Hill Street, Kandy", "Kandy", "Sri Lanka",
+                "Malini Fernando", "+94774567002", today.AddDays(-64), true, 2),
+            new ExpiredTestMemberSeed(
+                "Ravindu", "Perera", $"ravindu.perera{markerDomain}", "+94775678001",
+                "995678901V", new DateTime(1999, 9, 15), "Male", "3 Marine Drive, Negombo", "Negombo", "Sri Lanka",
+                "Dilshan Perera", "+94775678002", today.AddDays(-85), false, 1),
+        };
+
+        foreach (var seed in testMembers)
+        {
+            var package = packages[Math.Min(seed.PackageIndex, packages.Count - 1)];
+            var endDate = seed.MembershipEndDate;
+            var startDate = endDate.AddDays(-package.DurationDays);
+
+            var user = new User
+            {
+                Email = seed.Email,
+                PasswordHash = AuthenticationService.HashPassword("Member@123"),
+                FirstName = seed.FirstName,
+                LastName = seed.LastName,
+                Phone = seed.Phone,
+                IsActive = true
+            };
+            user.UserRoles.Add(new UserRole { Role = memberRole });
+
+            var member = new Member
+            {
+                User = user,
+                NicNumber = seed.NicNumber,
+                DateOfBirth = seed.DateOfBirth,
+                Gender = seed.Gender,
+                AddressLine1 = seed.AddressLine1,
+                City = seed.City,
+                Country = seed.Country,
+                EmergencyContactName = seed.EmergencyContactName,
+                EmergencyContactPhone = seed.EmergencyContactPhone,
+                IsFingerprintActivated = seed.IsFingerprintActivated,
+                FingerprintActivatedAt = seed.IsFingerprintActivated ? endDate.AddDays(-20) : null
+            };
+
+            Users.Add(user);
+            Members.Add(member);
+            await SaveChangesAsync();
+
+            var membership = new Membership
+            {
+                MemberId = member.MemberId,
+                PackageId = package.PackageId,
+                StartDate = startDate,
+                EndDate = endDate,
+                IsActive = false
+            };
+            Memberships.Add(membership);
+            await SaveChangesAsync();
+        }
+    }
+
+    private sealed record ExpiredTestMemberSeed(
+        string FirstName,
+        string LastName,
+        string Email,
+        string Phone,
+        string NicNumber,
+        DateTime DateOfBirth,
+        string Gender,
+        string AddressLine1,
+        string City,
+        string Country,
+        string EmergencyContactName,
+        string EmergencyContactPhone,
+        DateTime MembershipEndDate,
+        bool IsFingerprintActivated,
+        int PackageIndex);
 }

@@ -1,7 +1,9 @@
 # Stop any running Roar Fitness API instances (fixes MSB3027 file lock and port conflicts)
 $apiProcesses = Get-Process -Name "RoarFitnessERP.Api" -ErrorAction SilentlyContinue
 if ($apiProcesses) {
-    $apiProcesses | Stop-Process -Force
+    foreach ($process in $apiProcesses) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
     Write-Host "Stopped $($apiProcesses.Count) RoarFitnessERP.Api process(es)."
 }
 

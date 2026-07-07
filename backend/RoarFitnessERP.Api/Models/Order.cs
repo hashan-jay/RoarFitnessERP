@@ -17,7 +17,7 @@ public class Order
     public int? ProcessedByUserId { get; set; }
     public User? ProcessedByUser { get; set; }
     public string? Notes { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppTime.Now();
     public string? BillReference { get; set; }
     public ICollection<OrderItem> Items { get; set; } = [];
 }

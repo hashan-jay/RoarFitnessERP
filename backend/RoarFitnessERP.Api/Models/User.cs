@@ -10,7 +10,7 @@ public class User
     public string LastName { get; set; } = string.Empty;
     public string? Phone { get; set; }
     public bool IsActive { get; set; } = true;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppTime.Now();
     public DateTime? UpdatedAt { get; set; }
     public ICollection<UserRole> UserRoles { get; set; } = [];
     public Member? Member { get; set; }

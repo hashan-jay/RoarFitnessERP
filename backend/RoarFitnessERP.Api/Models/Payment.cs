@@ -16,5 +16,5 @@ public class Payment
     public string? GatewayTransactionId { get; set; }
     public string PaymentPurpose { get; set; } = string.Empty;
     public DateTime? PaidAt { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = AppTime.Now();
 }

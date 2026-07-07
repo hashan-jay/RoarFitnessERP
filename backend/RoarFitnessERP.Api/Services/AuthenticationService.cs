@@ -24,7 +24,19 @@ public class AuthenticationService(AppDbContext db, IConfiguration config) : IAu
             return new AuthLoginResult(null, false);
 
         if (!user.IsActive)
-            return new AuthLoginResult(null, true);
+        {
+            var member = await db.Members.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.UserId == user.UserId);
+            if (member?.IsTerminated == true)
+                return new AuthLoginResult(null, false, true);
+            var instructor = await db.Instructors.AsNoTracking()
+                .FirstOrDefaultAsync(i => i.UserId == user.UserId);
+            if (instructor?.IsTerminated == true)
+                return new AuthLoginResult(null, false, true);
+            if (member is not null)
+                return new AuthLoginResult(null, true);
+            return new AuthLoginResult(null, false);
+        }
 
         var roles = user.UserRoles.Select(ur => ur.Role.RoleName).ToList();
         var token = GenerateToken(user, roles);

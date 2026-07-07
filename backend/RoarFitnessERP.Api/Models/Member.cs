@@ -15,10 +15,11 @@ public class Member
     public string? Country { get; set; } = "Sri Lanka";
     public string? EmergencyContactName { get; set; }
     public string? EmergencyContactPhone { get; set; }
-    public string? ProfilePhotoUrl { get; set; }
     public string? FingerprintTemplateId { get; set; }
     public bool IsFingerprintActivated { get; set; }
     public DateTime? FingerprintActivatedAt { get; set; }
-    public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
+    public DateTime JoinedAt { get; set; } = AppTime.Now();
+    public bool IsTerminated { get; set; }
+    public DateTime? TerminatedAt { get; set; }
     public ICollection<Membership> Memberships { get; set; } = [];
 }

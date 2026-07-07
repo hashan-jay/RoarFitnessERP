@@ -1,0 +1,84 @@
+@startuml RoarFitnessERP_Visitor_Register_Login_VIP_Booking
+title Visitor Journey — Public Website → Register → Login → VIP Session Booking
+
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Visitor
+participant "Public Website\n(frontend :5200)" as PublicFE
+participant "Register / Payment\n(frontend)" as AuthFE
+participant "Member Portal\n(frontend)" as MemberFE
+participant "RoarFitnessERP API\n(backend :5188)" as API
+database "SQL Server" as DB
+
+== 1. Browse public website ==
+Visitor -> PublicFE : Open home, plans, classes pages
+PublicFE -> API : GET /api/public/packages
+API -> DB : Load membership packages
+API --> PublicFE : Packages for pricing / join
+
+PublicFE -> API : GET /api/public/general-classes
+API --> PublicFE : Weekly general class schedule
+
+PublicFE -> API : GET /api/public/vip-sessions?date={YYYY-MM-DD}
+API -> DB : Accepted VIP sessions for date
+API --> PublicFE : VIP session cards (read-only)
+PublicFE --> Visitor : Show schedule;\nVIP cards display\n"VIP Members Only"
+
+Visitor -> PublicFE : Click Join / Get Membership
+PublicFE --> AuthFE : Navigate to /join → /register?plan={id}
+
+== 2. Register & activate membership ==
+Visitor -> AuthFE : Complete registration form
+AuthFE -> API : POST /api/membership/register\n{ email, password, profile, packageId }
+API -> DB : Create User + Member (pending payment)
+API --> AuthFE : { memberId, identificationNumber, packageId }
+
+AuthFE -> API : POST /api/payment-gateway/membership/init\n?memberId=&packageId=
+API -> DB : Create Payment (Pending, Membership)
+API --> AuthFE : { paymentReference, checkoutUrl }
+
+AuthFE -> AuthFE : Save pending registration (sessionStorage)
+Visitor -> AuthFE : Confirm payment on /payment (mock card)
+AuthFE -> API : POST /api/payment-gateway/membership/confirm\n?packageId=\n{ paymentReference, gatewayTransactionId }
+API -> DB : Mark payment Completed;\nactivate Membership
+API --> AuthFE : { message: "Membership activated." }
+AuthFE --> Visitor : Payment success → go to login
+
+== 3. Log in to member account ==
+Visitor -> AuthFE : Submit login credentials
+AuthFE -> API : POST /api/authentication/login\n{ email, password }
+API -> DB : Validate user, roles, membership status
+API --> AuthFE : { token, userId, email, fullName, roles: ["Member"] }
+AuthFE -> AuthFE : Store JWT; signIn(member)
+AuthFE --> MemberFE : Redirect to Member Portal (/dashboard)
+
+== 4. Book a VIP session ==
+Visitor -> MemberFE : Open VIP Sessions
+MemberFE -> API : GET /api/special-sessions/member/available\nAuthorization: Bearer {token}
+API -> DB : Accepted sessions with spots;\nexclude already enrolled
+API --> MemberFE : Available VIP sessions list
+
+Visitor -> MemberFE : Click Enroll on a session
+MemberFE -> API : POST /api/payment-gateway/session/init\n?sessionId={id}
+API -> DB : Validate session;\ncreate Payment (Pending, Session)
+API --> MemberFE : { paymentReference }
+
+MemberFE -> MemberFE : Save pending session payment
+Visitor -> MemberFE : Confirm session fee on /payment
+MemberFE -> API : POST /api/payment-gateway/session/confirm\n?sessionId=\n{ paymentReference, gatewayTransactionId }
+API -> DB : Complete payment;\nINSERT SpecialSessionEnrollment
+API --> MemberFE : Enrollment confirmed
+
+MemberFE -> API : GET /api/special-sessions/member/mine
+API --> MemberFE : Enrolled VIP sessions
+MemberFE --> Visitor : Show booking under "My Sessions"
+
+note over Visitor, DB
+  **Systems in scope:** frontend (React SPA) + backend (ASP.NET API).
+  Fingerprint simulator is not part of this flow.
+  Membership payment must succeed before login;
+  VIP enrollment requires an active member account.
+end note
+
+@enduml

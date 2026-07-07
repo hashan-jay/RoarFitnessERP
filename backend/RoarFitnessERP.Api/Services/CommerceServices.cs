@@ -38,7 +38,11 @@ public class InventoryService(AppDbContext db) : IInventoryService
 
     public async Task<ProductDto?> CreateProductAsync(int userId, CreateProductRequest request)
     {
-        if (await db.Products.AnyAsync(p => p.SKU == request.SKU))
+        var sku = request.SKU.Trim();
+        if (string.IsNullOrWhiteSpace(sku) || string.IsNullOrWhiteSpace(request.ProductName))
+            return null;
+
+        if (await db.Products.AnyAsync(p => p.SKU == sku))
             return null;
 
         if (!await db.ProductCategories.AnyAsync(c => c.CategoryId == request.CategoryId))
@@ -47,12 +51,13 @@ public class InventoryService(AppDbContext db) : IInventoryService
         var product = new Product
         {
             CategoryId = request.CategoryId,
-            SKU = request.SKU.Trim(),
+            SKU = sku,
             ProductName = request.ProductName.Trim(),
-            Description = request.Description,
+            Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             UnitPriceLKR = request.UnitPriceLKR,
+            IsAvailableOnline = true,
             IsActive = true,
-            ImageUrl = request.ImageUrl
+            ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim()
         };
 
         db.Products.Add(product);
@@ -63,23 +68,24 @@ public class InventoryService(AppDbContext db) : IInventoryService
             ProductId = product.ProductId,
             QuantityOnHand = Math.Max(0, request.InitialQuantity),
             ReorderLevel = request.ReorderLevel,
-            LastRestockedAt = request.InitialQuantity > 0 ? DateTime.UtcNow : null
+            LastRestockedAt = request.InitialQuantity > 0 ? AppTime.Now() : null
         };
 
         db.InventoryItems.Add(inventory);
+        await db.SaveChangesAsync();
 
         if (request.InitialQuantity > 0)
         {
             db.InventoryAdjustments.Add(new InventoryAdjustment
             {
-                InventoryItem = inventory,
+                InventoryItemId = inventory.InventoryItemId,
                 AdjustedByUserId = userId,
                 QuantityChange = request.InitialQuantity,
                 Reason = "Initial stock on product creation"
             });
+            await db.SaveChangesAsync();
         }
 
-        await db.SaveChangesAsync();
         return (await GetAllAsync()).FirstOrDefault(p => p.ProductId == product.ProductId);
     }
 
@@ -105,7 +111,8 @@ public class InventoryService(AppDbContext db) : IInventoryService
         product.Description = request.Description;
         product.UnitPriceLKR = request.UnitPriceLKR;
         product.IsActive = request.IsActive;
-        product.ImageUrl = request.ImageUrl;
+        product.IsAvailableOnline = request.IsActive;
+        product.ImageUrl = string.IsNullOrWhiteSpace(request.ImageUrl) ? null : request.ImageUrl.Trim();
 
         if (product.Inventory is not null)
             product.Inventory.ReorderLevel = request.ReorderLevel;
@@ -140,7 +147,7 @@ public class InventoryService(AppDbContext db) : IInventoryService
 
         var change = -item.QuantityOnHand;
         item.QuantityOnHand = 0;
-        item.UpdatedAt = DateTime.UtcNow;
+        item.UpdatedAt = AppTime.Now();
 
         db.InventoryAdjustments.Add(new InventoryAdjustment
         {
@@ -160,7 +167,7 @@ public class InventoryService(AppDbContext db) : IInventoryService
         if (item is null) return false;
 
         item.QuantityOnHand += request.QuantityChange;
-        item.UpdatedAt = DateTime.UtcNow;
+        item.UpdatedAt = AppTime.Now();
 
         db.InventoryAdjustments.Add(new InventoryAdjustment
         {
@@ -219,7 +226,7 @@ public class PosService(AppDbContext db) : IPosService
             PaymentStatusId = completed.PaymentStatusId,
             AmountLKR = subtotal,
             PaymentPurpose = "POS",
-            PaidAt = DateTime.UtcNow
+            PaidAt = AppTime.Now()
         };
 
         var order = new Order
@@ -243,7 +250,7 @@ public class PosService(AppDbContext db) : IPosService
         {
             var inv = await db.InventoryItems.FirstAsync(i => i.ProductId == line.ProductId);
             inv.QuantityOnHand -= line.Quantity;
-            inv.UpdatedAt = DateTime.UtcNow;
+            inv.UpdatedAt = AppTime.Now();
         }
 
         await db.SaveChangesAsync();
@@ -298,7 +305,7 @@ public class ReportService(AppDbContext db) : IReportService
             .ToListAsync();
 
         var breakdown = CalculateRevenueBreakdown(payments);
-        var now = DateTime.UtcNow;
+        var now = AppTime.Now();
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var monthEnd = monthStart.AddMonths(1);
         var thisMonthPayments = payments
@@ -307,30 +314,22 @@ public class ReportService(AppDbContext db) : IReportService
         var thisMonth = CalculateRevenueBreakdown(thisMonthPayments).Total;
 
         var totalMembers = await db.Members.CountAsync();
+        var today = ProfileHelper.GetAppToday();
         var activeMembers = await db.Memberships
-            .CountAsync(m => m.IsActive && m.EndDate >= DateTime.UtcNow.Date);
+            .CountAsync(m => m.IsActive && m.EndDate >= today);
 
         var lowStock = await db.InventoryItems.CountAsync(i => i.QuantityOnHand <= i.ReorderLevel);
 
-        var daily = payments
-            .Where(p => p.PaidAt.HasValue)
-            .GroupBy(p => p.PaidAt!.Value.Date)
-            .OrderByDescending(g => g.Key)
-            .Take(7)
-            .Select(g => new DailyRevenueDto(
-                g.Key,
-                g.Where(IsMembershipInGym).Sum(p => p.AmountLKR),
-                g.Where(IsMembershipGateway).Sum(p => p.AmountLKR),
-                g.Where(p => p.PaymentPurpose == "POS").Sum(p => p.AmountLKR),
-                g.Where(p => p.PaymentPurpose == "SpecialSession").Sum(p => p.AmountLKR)))
-            .ToList();
+        var daily = BuildDailyRevenueForMonth(payments, today.Year, today.Month);
 
-        var recentTransactions = await BuildRecentTransactionsAsync(25);
+        var recentTransactions = await BuildRecentTransactionsAsync(200);
 
         return new ReportSummaryDto(
-            breakdown.MembershipInGym,
+            breakdown.MembershipInGymCash,
+            breakdown.MembershipInGymCard,
             breakdown.MembershipGateway,
-            breakdown.Pos,
+            breakdown.PosCash,
+            breakdown.PosCard,
             breakdown.SessionGateway,
             breakdown.Total,
             thisMonth,
@@ -383,16 +382,20 @@ public class ReportService(AppDbContext db) : IReportService
             .ToList();
 
         var recentTransactions = await BuildRecentTransactionsAsync(100, monthStart: start, monthEnd: end);
+        var dailyRevenue = BuildDailyRevenueForMonth(payments, year, month);
 
         return new MonthlyReportDto(
             year,
             month,
             start.ToString("MMMM yyyy"),
-            breakdown.MembershipInGym,
+            breakdown.MembershipInGymCash,
+            breakdown.MembershipInGymCard,
             breakdown.MembershipGateway,
-            breakdown.Pos,
+            breakdown.PosCash,
+            breakdown.PosCard,
             breakdown.SessionGateway,
             breakdown.Total,
+            dailyRevenue,
             soldItems,
             recentTransactions);
     }
@@ -417,18 +420,63 @@ public class ReportService(AppDbContext db) : IReportService
     private static RevenueBreakdown CalculateRevenueBreakdown(IEnumerable<Payment> payments)
     {
         var list = payments.ToList();
-        var membershipInGym = list.Where(IsMembershipInGym).Sum(p => p.AmountLKR);
+        var membershipInGymCash = list
+            .Where(p => IsMembershipInGym(p) && p.PaymentMethod?.MethodName == "Cash")
+            .Sum(p => p.AmountLKR);
+        var membershipInGymCard = list
+            .Where(p => IsMembershipInGym(p) && p.PaymentMethod?.MethodName == "Card")
+            .Sum(p => p.AmountLKR);
         var membershipGateway = list.Where(IsMembershipGateway).Sum(p => p.AmountLKR);
-        var pos = list.Where(p => p.PaymentPurpose == "POS").Sum(p => p.AmountLKR);
+        var posCash = list
+            .Where(p => p.PaymentPurpose == "POS" && p.PaymentMethod?.MethodName == "Cash")
+            .Sum(p => p.AmountLKR);
+        var posCard = list
+            .Where(p => p.PaymentPurpose == "POS" && p.PaymentMethod?.MethodName == "Card")
+            .Sum(p => p.AmountLKR);
         var sessionGateway = list.Where(p => p.PaymentPurpose == "SpecialSession").Sum(p => p.AmountLKR);
-        var total = membershipInGym + membershipGateway + pos + sessionGateway;
+        var total = membershipInGymCash + membershipInGymCard + membershipGateway + posCash + posCard + sessionGateway;
 
         return new RevenueBreakdown(
-            membershipInGym,
+            membershipInGymCash,
+            membershipInGymCard,
             membershipGateway,
-            pos,
+            posCash,
+            posCard,
             sessionGateway,
             total);
+    }
+
+    private static IReadOnlyList<DailyRevenueDto> BuildDailyRevenueForMonth(
+        IEnumerable<Payment> payments,
+        int year,
+        int month)
+    {
+        var daysInMonth = DateTime.DaysInMonth(year, month);
+        var paymentList = payments.ToList();
+        var rows = new List<DailyRevenueDto>();
+
+        for (var day = 1; day <= daysInMonth; day++)
+        {
+            var colomboDate = new DateTime(year, month, day);
+            var (startUtc, endUtc) = ProfileHelper.GetAppDayUtcRange(colomboDate);
+            var dayPayments = paymentList.Where(p =>
+            {
+                var when = p.PaidAt ?? p.CreatedAt;
+                return when >= startUtc && when < endUtc;
+            });
+            var breakdown = CalculateRevenueBreakdown(dayPayments);
+            rows.Add(new DailyRevenueDto(
+                colomboDate,
+                breakdown.Total,
+                breakdown.MembershipInGymCash,
+                breakdown.MembershipInGymCard,
+                breakdown.MembershipGateway,
+                breakdown.PosCash,
+                breakdown.PosCard,
+                breakdown.SessionGateway));
+        }
+
+        return rows;
     }
 
     private async Task<IReadOnlyList<RecentTransactionDto>> BuildRecentTransactionsAsync(
@@ -476,8 +524,10 @@ public class ReportService(AppDbContext db) : IReportService
 
         if (IsMembershipInGym(payment))
         {
-            category = "Membership (In-Gym)";
-            description = $"In-gym membership — {memberName}";
+            category = method == "Card"
+                ? "Membership Fees at Gym (Card)"
+                : "Membership Fees at Gym (Cash)";
+            description = $"In-gym membership renewal — {memberName}";
         }
         else if (IsMembershipGateway(payment))
         {
@@ -486,7 +536,7 @@ public class ReportService(AppDbContext db) : IReportService
         }
         else if (payment.PaymentPurpose == "POS")
         {
-            category = "In-Gym POS";
+            category = method == "Card" ? "In-Gym POS (Card)" : "In-Gym POS (Cash)";
             description = order is not null
                 ? $"POS sale {order.OrderReference}"
                 : "In-gym merchandise sale";
@@ -513,9 +563,11 @@ public class ReportService(AppDbContext db) : IReportService
     }
 
     private sealed record RevenueBreakdown(
-        decimal MembershipInGym,
+        decimal MembershipInGymCash,
+        decimal MembershipInGymCard,
         decimal MembershipGateway,
-        decimal Pos,
+        decimal PosCash,
+        decimal PosCard,
         decimal SessionGateway,
         decimal Total);
 }
@@ -532,12 +584,26 @@ public class PublicContentService(AppDbContext db) : IPublicContentService
     {
         db.ContactMessages.Add(new ContactMessage
         {
-            FullName = request.FullName,
-            Email = request.Email,
-            Phone = request.Phone,
-            Subject = request.Subject,
-            Message = request.Message
+            FullName = request.FullName.Trim(),
+            Email = request.Email.Trim(),
+            Phone = request.Phone?.Trim(),
+            Subject = string.IsNullOrWhiteSpace(request.Subject) ? "Website inquiry" : request.Subject.Trim(),
+            Message = request.Message.Trim(),
+            SubmittedAt = AppTime.Now()
         });
         await db.SaveChangesAsync();
     }
+
+    public async Task<IReadOnlyList<VisitorInquiryDto>> GetVisitorInquiriesAsync() =>
+        await db.ContactMessages
+            .AsNoTracking()
+            .OrderByDescending(m => m.SubmittedAt)
+            .Select(m => new VisitorInquiryDto(
+                m.ContactMessageId,
+                m.FullName,
+                m.Email,
+                m.Phone,
+                m.Message,
+                m.SubmittedAt))
+            .ToListAsync();
 }

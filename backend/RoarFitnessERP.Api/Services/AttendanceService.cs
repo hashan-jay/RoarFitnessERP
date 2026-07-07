@@ -9,7 +9,10 @@ namespace RoarFitnessERP.Api.Services;
 /// <summary>Fingerprint scan validation, activation, and attendance logging.</summary>
 public class AttendanceService(AppDbContext db) : IAttendanceService
 {
-    /// <summary>Validates a fingerprint against members or instructors and logs the entry attempt.</summary>
+    /// <summary>
+    /// Validates a fingerprint against members or instructors and logs the entry attempt.
+    /// Access is denied unless fingerprint is activated, account is active, and membership is valid.
+    /// </summary>
     public async Task<FingerprintScanResponse> ProcessScanAsync(FingerprintScanRequest request)
     {
         var member = await db.Members
@@ -19,15 +22,19 @@ public class AttendanceService(AppDbContext db) : IAttendanceService
 
         if (member is not null)
         {
+            var activeMembership = ProfileHelper.ResolveActiveMembership(member.Memberships);
             var accessGranted = member.IsFingerprintActivated &&
+                                !member.IsTerminated &&
                                 member.User.IsActive &&
-                                member.Memberships.Any(ms => ms.IsActive && ms.EndDate >= DateTime.UtcNow.Date);
+                                activeMembership is not null;
 
-            var message = !member.IsFingerprintActivated
+            var message = member.IsTerminated
+                ? "Member account terminated. Contact admin desk."
+                : !member.IsFingerprintActivated
                 ? "Fingerprint not activated. Visit admin desk."
                 : !member.User.IsActive
                     ? "Member account inactive."
-                    : !member.Memberships.Any(ms => ms.IsActive && ms.EndDate >= DateTime.UtcNow.Date)
+                    : activeMembership is null
                         ? "Membership expired or inactive. Access denied."
                         : "Entry granted.";
 
@@ -37,7 +44,7 @@ public class AttendanceService(AppDbContext db) : IAttendanceService
                 message,
                 $"{member.User.FirstName} {member.User.LastName}",
                 "Member",
-                DateTime.UtcNow);
+                ProfileHelper.ToUtcKind(AppTime.Now()));
         }
 
         var instructor = await db.Instructors
@@ -46,8 +53,12 @@ public class AttendanceService(AppDbContext db) : IAttendanceService
 
         if (instructor is not null)
         {
-            var accessGranted = instructor.IsFingerprintActivated && instructor.User.IsActive;
-            var message = accessGranted
+            var accessGranted = instructor.IsFingerprintActivated &&
+                                !instructor.IsTerminated &&
+                                instructor.User.IsActive;
+            var message = instructor.IsTerminated
+                ? "Instructor account terminated. Contact admin desk."
+                : accessGranted
                 ? "Staff entry granted."
                 : "Instructor fingerprint not activated.";
             await LogAsync(null, instructor.InstructorId, request, accessGranted, message);
@@ -56,11 +67,11 @@ public class AttendanceService(AppDbContext db) : IAttendanceService
                 message,
                 $"{instructor.User.FirstName} {instructor.User.LastName}",
                 "Instructor",
-                DateTime.UtcNow);
+                ProfileHelper.ToUtcKind(AppTime.Now()));
         }
 
         await LogAsync(null, null, request, false, "Unknown fingerprint.");
-        return new FingerprintScanResponse(false, "Unknown fingerprint.", null, null, DateTime.UtcNow);
+        return new FingerprintScanResponse(false, "Unknown fingerprint.", null, null, ProfileHelper.ToUtcKind(AppTime.Now()));
     }
 
     /// <summary>Binds a fingerprint template to a member and enables gym entry.</summary>
@@ -70,7 +81,7 @@ public class AttendanceService(AppDbContext db) : IAttendanceService
         if (member is null) return false;
         member.FingerprintTemplateId = request.FingerprintTemplateId;
         member.IsFingerprintActivated = true;
-        member.FingerprintActivatedAt = DateTime.UtcNow;
+        member.FingerprintActivatedAt = AppTime.Now();
         await db.SaveChangesAsync();
         return true;
     }
@@ -86,26 +97,200 @@ public class AttendanceService(AppDbContext db) : IAttendanceService
         return true;
     }
 
-    /// <summary>Returns today's entry scan logs, granted and denied, up to 200 records.</summary>
+    /// <summary>Returns today's entry scan logs in Colombo time, granted and denied, up to 200 records.</summary>
     public async Task<IReadOnlyList<AttendanceLogDto>> GetTodayLogsAsync()
     {
-        var today = DateTime.UtcNow.Date;
+        var (startUtc, endUtc) = ProfileHelper.GetAppDayUtcRange(ProfileHelper.GetAppToday());
+        return await QueryLogsAsync(startUtc, endUtc);
+    }
+
+    /// <summary>Returns member gym entry logs for a Colombo calendar date (Admin).</summary>
+    public async Task<IReadOnlyList<AdminMemberAttendanceLogDto>> GetMemberLogsByDateAsync(DateTime colomboDate)
+    {
+        var (startUtc, endUtc) = ProfileHelper.GetAppDayUtcRange(colomboDate);
         return await db.AttendanceLogs
+            .AsNoTracking()
+            .Include(a => a.Member!).ThenInclude(m => m.User)
+            .Where(a => a.MemberId != null && a.LoggedAt >= startUtc && a.LoggedAt < endUtc)
+            .OrderByDescending(a => a.LoggedAt)
+            .Select(a => new AdminMemberAttendanceLogDto(
+                a.AttendanceLogId,
+                ProfileHelper.ToUtcKind(a.LoggedAt),
+                a.AccessGranted,
+                a.ValidationMessage,
+                a.MemberId!.Value,
+                a.Member!.IdentificationNumber,
+                a.Member.User.FirstName + " " + a.Member.User.LastName))
+            .ToListAsync();
+    }
+
+    /// <summary>Returns gym entry logs for a Colombo calendar date (Admin), optionally filtered by person type.</summary>
+    public async Task<IReadOnlyList<AdminAttendanceLogDto>> GetAdminLogsByDateAsync(DateTime colomboDate, string filter)
+    {
+        var (startUtc, endUtc) = ProfileHelper.GetAppDayUtcRange(colomboDate);
+        var normalizedFilter = filter.Trim().ToLowerInvariant();
+
+        var query = db.AttendanceLogs
+            .AsNoTracking()
+            .Include(a => a.Member!).ThenInclude(m => m.User)
+            .Include(a => a.Instructor!).ThenInclude(i => i.User)
+            .Where(a => a.LoggedAt >= startUtc && a.LoggedAt < endUtc);
+
+        if (normalizedFilter is "members" or "member")
+            query = query.Where(a => a.MemberId != null);
+        else if (normalizedFilter is "instructors" or "instructor")
+            query = query.Where(a => a.InstructorId != null);
+
+        return await query
+            .OrderByDescending(a => a.LoggedAt)
+            .Select(a => new AdminAttendanceLogDto(
+                a.AttendanceLogId,
+                ProfileHelper.ToUtcKind(a.LoggedAt),
+                a.AccessGranted,
+                a.ValidationMessage,
+                a.MemberId != null ? "Member" : a.InstructorId != null ? "Instructor" : "Unknown",
+                a.MemberId != null
+                    ? a.Member!.IdentificationNumber
+                    : a.InstructorId != null
+                        ? a.Instructor!.IdentificationNumber
+                        : null,
+                a.MemberId != null
+                    ? a.Member!.User.FirstName + " " + a.Member.User.LastName
+                    : a.InstructorId != null
+                        ? a.Instructor!.User.FirstName + " " + a.Instructor.User.LastName
+                        : "Unknown"))
+            .ToListAsync();
+    }
+
+    /// <summary>Returns the logged-in member's entry logs for a Colombo calendar month.</summary>
+    public async Task<IReadOnlyList<MemberAttendanceEntryDto>> GetMemberLogsForMonthAsync(int userId, int year, int month)
+    {
+        if (month is < 1 or > 12)
+            return [];
+
+        var memberId = await db.Members
+            .Where(m => m.UserId == userId)
+            .Select(m => (int?)m.MemberId)
+            .FirstOrDefaultAsync();
+
+        if (memberId is null)
+            return [];
+
+        var monthStart = new DateTime(year, month, 1);
+        var (startUtc, _) = ProfileHelper.GetAppDayUtcRange(monthStart);
+        var (endUtcExclusive, _) = ProfileHelper.GetAppDayUtcRange(monthStart.AddMonths(1));
+
+        return await db.AttendanceLogs
+            .AsNoTracking()
+            .Where(a => a.MemberId == memberId && a.LoggedAt >= startUtc && a.LoggedAt < endUtcExclusive)
+            .OrderByDescending(a => a.LoggedAt)
+            .Select(a => new MemberAttendanceEntryDto(
+                a.AttendanceLogId,
+                ProfileHelper.ToUtcKind(a.LoggedAt),
+                a.AccessGranted,
+                a.ValidationMessage))
+            .ToListAsync();
+    }
+
+    /// <summary>Returns the logged-in instructor's entry logs for a Colombo calendar month.</summary>
+    public async Task<IReadOnlyList<MemberAttendanceEntryDto>> GetInstructorLogsForMonthAsync(int userId, int year, int month)
+    {
+        if (month is < 1 or > 12)
+            return [];
+
+        var instructorId = await db.Instructors
+            .Where(i => i.UserId == userId)
+            .Select(i => (int?)i.InstructorId)
+            .FirstOrDefaultAsync();
+
+        if (instructorId is null)
+            return [];
+
+        var monthStart = new DateTime(year, month, 1);
+        var (startUtc, _) = ProfileHelper.GetAppDayUtcRange(monthStart);
+        var (endUtcExclusive, _) = ProfileHelper.GetAppDayUtcRange(monthStart.AddMonths(1));
+
+        return await db.AttendanceLogs
+            .AsNoTracking()
+            .Where(a => a.InstructorId == instructorId && a.LoggedAt >= startUtc && a.LoggedAt < endUtcExclusive)
+            .OrderByDescending(a => a.LoggedAt)
+            .Select(a => new MemberAttendanceEntryDto(
+                a.AttendanceLogId,
+                ProfileHelper.ToUtcKind(a.LoggedAt),
+                a.AccessGranted,
+                a.ValidationMessage))
+            .ToListAsync();
+    }
+
+    /// <summary>Returns gym entry logs for the logged-in person (instructor or member) for a Colombo calendar month.</summary>
+    public async Task<IReadOnlyList<MemberAttendanceEntryDto>> GetPersonLogsForMonthAsync(int userId, int year, int month)
+    {
+        var isInstructor = await db.Instructors.AnyAsync(i => i.UserId == userId);
+        if (isInstructor)
+            return await GetInstructorLogsForMonthAsync(userId, year, month);
+
+        return await GetMemberLogsForMonthAsync(userId, year, month);
+    }
+
+    private async Task<IReadOnlyList<AttendanceLogDto>> QueryLogsAsync(DateTime startUtc, DateTime endUtc) =>
+        await db.AttendanceLogs
             .AsNoTracking()
             .Include(a => a.Member).ThenInclude(m => m!.User)
             .Include(a => a.Instructor).ThenInclude(i => i!.User)
-            .Where(a => a.LoggedAt >= today)
+            .Where(a => a.LoggedAt >= startUtc && a.LoggedAt < endUtc)
             .OrderByDescending(a => a.LoggedAt)
             .Take(200)
             .Select(a => new AttendanceLogDto(
                 a.AttendanceLogId,
-                a.LoggedAt,
+                ProfileHelper.ToUtcKind(a.LoggedAt),
                 a.AccessGranted,
                 a.ValidationMessage,
                 a.Member != null ? a.Member.User.FirstName + " " + a.Member.User.LastName : null,
                 a.Instructor != null ? a.Instructor.User.FirstName + " " + a.Instructor.User.LastName : null,
                 a.Member != null ? "Member" : a.Instructor != null ? "Instructor" : "Unknown"))
             .ToListAsync();
+
+    /// <summary>Returns all activated fingerprint templates for simulator and admin desk lookup.</summary>
+    public async Task<IReadOnlyList<EnrolledFingerprintDto>> GetEnrolledFingerprintsAsync()
+    {
+        var members = await db.Members
+            .AsNoTracking()
+            .Include(m => m.User)
+            .Include(m => m.Memberships)
+            .Where(m => m.IsFingerprintActivated && m.FingerprintTemplateId != null)
+            .ToListAsync();
+
+        var memberItems = members.Select(m =>
+        {
+            var active = ProfileHelper.ResolveActiveMembership(m.Memberships);
+            return new EnrolledFingerprintDto(
+                m.FingerprintTemplateId!,
+                $"{m.User.FirstName} {m.User.LastName}",
+                "Member",
+                m.MemberId,
+                null,
+                m.IdentificationNumber,
+                active is not null);
+        });
+
+        var instructors = await db.Instructors
+            .AsNoTracking()
+            .Include(i => i.User)
+            .Where(i => i.IsFingerprintActivated && i.FingerprintTemplateId != null)
+            .Select(i => new EnrolledFingerprintDto(
+                i.FingerprintTemplateId!,
+                i.User.FirstName + " " + i.User.LastName,
+                "Instructor",
+                null,
+                i.InstructorId,
+                i.IdentificationNumber,
+                true))
+            .ToListAsync();
+
+        return memberItems.Concat(instructors)
+            .OrderBy(e => e.PersonType)
+            .ThenBy(e => e.PersonName)
+            .ToList();
     }
 
     private async Task LogAsync(

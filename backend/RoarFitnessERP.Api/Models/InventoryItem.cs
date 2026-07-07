@@ -9,5 +9,5 @@ public class InventoryItem
     public int QuantityOnHand { get; set; }
     public int ReorderLevel { get; set; } = 5;
     public DateTime? LastRestockedAt { get; set; }
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = AppTime.Now();
 }

@@ -6,132 +6,130 @@ using RoarFitnessERP.Api.Services.Interfaces;
 
 namespace RoarFitnessERP.Api.Services;
 
-/// <summary>CRUD operations for instructor-authored member fitness and meal plans.</summary>
+/// <summary>Member plan requests and instructor-approved workout/meal plans.</summary>
 public class MemberPlanService(AppDbContext db) : IMemberPlanService
 {
-    /// <summary>Lists members available for plan assignment by the logged-in instructor.</summary>
-    public async Task<IReadOnlyList<MemberPlanMemberOptionDto>> GetMembersForPlanningAsync() =>
-        await db.Members
-            .Include(m => m.User)
-            .OrderBy(m => m.User.FirstName)
-            .ThenBy(m => m.User.LastName)
-            .Select(m => new MemberPlanMemberOptionDto(
-                m.MemberId,
-                m.IdentificationNumber,
-                m.User.FirstName + " " + m.User.LastName,
-                m.User.Email))
+    private static readonly HashSet<string> ValidCategories = ["Workout", "Meal"];
+
+    /// <summary>Lists active instructors available for plan requests.</summary>
+    public async Task<IReadOnlyList<PlanInstructorOptionDto>> GetInstructorsForPlanningAsync() =>
+        await db.Instructors
+            .Include(i => i.User)
+            .Where(i => !i.IsTerminated)
+            .OrderBy(i => i.User.FirstName)
+            .ThenBy(i => i.User.LastName)
+            .Select(i => new PlanInstructorOptionDto(
+                i.InstructorId,
+                i.User.FirstName + " " + i.User.LastName,
+                i.Specialization))
             .ToListAsync();
 
-    /// <summary>Returns plan summaries authored by the logged-in instructor.</summary>
-    public async Task<IReadOnlyList<MemberFitnessPlanSummaryDto>> GetInstructorPlansAsync(int userId)
+    /// <summary>Creates a pending plan request from the logged-in member.</summary>
+    public async Task<MemberPlanRequestDto?> CreatePlanRequestAsync(int userId, CreateMemberPlanRequest request)
+    {
+        var memberId = await GetMemberIdAsync(userId);
+        if (memberId is null)
+            return null;
+
+        ValidateRequestInput(request.InstructorId, request.PlanCategory);
+
+        if (!await db.Instructors.AnyAsync(i => i.InstructorId == request.InstructorId && !i.IsTerminated))
+            throw new InvalidOperationException("Instructor not found.");
+
+        var planRequest = new MemberPlanRequest
+        {
+            MemberId = memberId.Value,
+            InstructorId = request.InstructorId,
+            PlanCategory = request.PlanCategory.Trim(),
+            MemberNote = request.MemberNote?.Trim(),
+            Status = "Pending",
+            CreatedAt = AppTime.Now()
+        };
+
+        db.MemberPlanRequests.Add(planRequest);
+        await db.SaveChangesAsync();
+
+        return await GetRequestDtoAsync(planRequest.RequestId);
+    }
+
+    /// <summary>Returns pending plan requests submitted by the logged-in member.</summary>
+    public async Task<IReadOnlyList<MemberPlanRequestDto>> GetMemberPendingRequestsAsync(int userId)
+    {
+        var memberId = await GetMemberIdAsync(userId);
+        if (memberId is null)
+            return [];
+
+        return await db.MemberPlanRequests
+            .AsNoTracking()
+            .Where(r => r.MemberId == memberId && r.Status == "Pending")
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(MapRequestDtoExpression())
+            .ToListAsync();
+    }
+
+    /// <summary>Returns pending plan requests assigned to the logged-in instructor.</summary>
+    public async Task<IReadOnlyList<MemberPlanRequestDto>> GetPendingRequestsAsync(int userId)
     {
         var instructorId = await GetInstructorIdAsync(userId);
         if (instructorId is null)
             return [];
 
-        return await db.MemberFitnessPlans
-            .Include(p => p.Member).ThenInclude(m => m.User)
-            .Include(p => p.Instructor).ThenInclude(i => i.User)
-            .Where(p => p.InstructorId == instructorId)
-            .OrderByDescending(p => p.UpdatedAt)
-            .Select(p => new MemberFitnessPlanSummaryDto(
-                p.PlanId,
-                p.MemberId,
-                p.Member.User.FirstName + " " + p.Member.User.LastName,
-                p.Instructor.User.FirstName + " " + p.Instructor.User.LastName,
-                p.Title,
-                p.FitnessGoal,
-                p.UpdatedAt))
+        return await db.MemberPlanRequests
+            .AsNoTracking()
+            .Where(r => r.InstructorId == instructorId && r.Status == "Pending")
+            .OrderBy(r => r.CreatedAt)
+            .Select(MapRequestDtoExpression())
             .ToListAsync();
     }
 
-    /// <summary>Creates a new fitness plan for a member on behalf of the logged-in instructor.</summary>
-    public async Task<MemberFitnessPlanDto?> CreatePlanAsync(int userId, CreateMemberFitnessPlanRequest request)
+    /// <summary>Approves a pending request and sends the plan to the member.</summary>
+    public async Task<MemberFitnessPlanDto?> ApprovePlanRequestAsync(
+        int userId,
+        int requestId,
+        ApproveMemberPlanRequest request)
     {
         var instructorId = await GetInstructorIdAsync(userId);
         if (instructorId is null)
             return null;
 
-        if (!await db.Members.AnyAsync(m => m.MemberId == request.MemberId))
-            throw new InvalidOperationException("Member not found.");
+        if (string.IsNullOrWhiteSpace(request.Description))
+            throw new InvalidOperationException("Plan description is required.");
 
-        ValidatePlanContent(request.Title, request.FitnessGoal, request.WorkoutPlan, request.MealPlan);
+        var planRequest = await db.MemberPlanRequests
+            .FirstOrDefaultAsync(r =>
+                r.RequestId == requestId &&
+                r.InstructorId == instructorId &&
+                r.Status == "Pending");
 
+        if (planRequest is null)
+            return null;
+
+        var now = AppTime.Now();
         var plan = new MemberFitnessPlan
         {
-            MemberId = request.MemberId,
-            InstructorId = instructorId.Value,
-            Title = request.Title.Trim(),
-            FitnessGoal = request.FitnessGoal.Trim(),
-            WorkoutPlan = request.WorkoutPlan.Trim(),
-            MealPlan = request.MealPlan.Trim(),
-            Notes = request.Notes?.Trim()
+            RequestId = planRequest.RequestId,
+            MemberId = planRequest.MemberId,
+            InstructorId = planRequest.InstructorId,
+            PlanCategory = planRequest.PlanCategory,
+            Description = request.Description.Trim(),
+            Notes = request.Notes?.Trim(),
+            CreatedAt = now,
+            UpdatedAt = now
         };
 
         db.MemberFitnessPlans.Add(plan);
         await db.SaveChangesAsync();
 
+        planRequest.Status = "Approved";
+        planRequest.PlanId = plan.PlanId;
+        planRequest.ApprovedAt = now;
+
+        await db.SaveChangesAsync();
+
         return await GetPlanDtoAsync(plan.PlanId);
     }
 
-    /// <summary>Updates an existing plan owned by the logged-in instructor.</summary>
-    public async Task<MemberFitnessPlanDto?> UpdatePlanAsync(int userId, int planId, UpdateMemberFitnessPlanRequest request)
-    {
-        var instructorId = await GetInstructorIdAsync(userId);
-        if (instructorId is null)
-            return null;
-
-        var plan = await db.MemberFitnessPlans
-            .FirstOrDefaultAsync(p => p.PlanId == planId && p.InstructorId == instructorId);
-
-        if (plan is null)
-            return null;
-
-        ValidatePlanContent(request.Title, request.FitnessGoal, request.WorkoutPlan, request.MealPlan);
-
-        plan.Title = request.Title.Trim();
-        plan.FitnessGoal = request.FitnessGoal.Trim();
-        plan.WorkoutPlan = request.WorkoutPlan.Trim();
-        plan.MealPlan = request.MealPlan.Trim();
-        plan.Notes = request.Notes?.Trim();
-        plan.UpdatedAt = DateTime.UtcNow;
-
-        await db.SaveChangesAsync();
-        return await GetPlanDtoAsync(plan.PlanId);
-    }
-
-    /// <summary>Deletes a plan owned by the logged-in instructor.</summary>
-    public async Task<bool> DeletePlanAsync(int userId, int planId)
-    {
-        var instructorId = await GetInstructorIdAsync(userId);
-        if (instructorId is null)
-            return false;
-
-        var plan = await db.MemberFitnessPlans
-            .FirstOrDefaultAsync(p => p.PlanId == planId && p.InstructorId == instructorId);
-
-        if (plan is null)
-            return false;
-
-        db.MemberFitnessPlans.Remove(plan);
-        await db.SaveChangesAsync();
-        return true;
-    }
-
-    /// <summary>Returns full plan detail when owned by the logged-in instructor.</summary>
-    public async Task<MemberFitnessPlanDto?> GetPlanForInstructorAsync(int userId, int planId)
-    {
-        var instructorId = await GetInstructorIdAsync(userId);
-        if (instructorId is null)
-            return null;
-
-        var exists = await db.MemberFitnessPlans
-            .AnyAsync(p => p.PlanId == planId && p.InstructorId == instructorId);
-
-        return exists ? await GetPlanDtoAsync(planId) : null;
-    }
-
-    /// <summary>Returns plan summaries assigned to the logged-in member.</summary>
+    /// <summary>Returns approved plan summaries assigned to the logged-in member.</summary>
     public async Task<IReadOnlyList<MemberFitnessPlanSummaryDto>> GetMemberPlansAsync(int userId)
     {
         var memberId = await GetMemberIdAsync(userId);
@@ -139,18 +137,25 @@ public class MemberPlanService(AppDbContext db) : IMemberPlanService
             return [];
 
         return await db.MemberFitnessPlans
-            .Include(p => p.Member).ThenInclude(m => m.User)
-            .Include(p => p.Instructor).ThenInclude(i => i.User)
+            .AsNoTracking()
             .Where(p => p.MemberId == memberId)
             .OrderByDescending(p => p.UpdatedAt)
-            .Select(p => new MemberFitnessPlanSummaryDto(
-                p.PlanId,
-                p.MemberId,
-                p.Member.User.FirstName + " " + p.Member.User.LastName,
-                p.Instructor.User.FirstName + " " + p.Instructor.User.LastName,
-                p.Title,
-                p.FitnessGoal,
-                p.UpdatedAt))
+            .Select(MapPlanSummaryExpression())
+            .ToListAsync();
+    }
+
+    /// <summary>Returns approved plan summaries created by the logged-in instructor.</summary>
+    public async Task<IReadOnlyList<MemberFitnessPlanSummaryDto>> GetInstructorPlansAsync(int userId)
+    {
+        var instructorId = await GetInstructorIdAsync(userId);
+        if (instructorId is null)
+            return [];
+
+        return await db.MemberFitnessPlans
+            .AsNoTracking()
+            .Where(p => p.InstructorId == instructorId)
+            .OrderByDescending(p => p.UpdatedAt)
+            .Select(MapPlanSummaryExpression())
             .ToListAsync();
     }
 
@@ -167,26 +172,69 @@ public class MemberPlanService(AppDbContext db) : IMemberPlanService
         return exists ? await GetPlanDtoAsync(planId) : null;
     }
 
+    /// <summary>Returns full plan detail when created by the logged-in instructor.</summary>
+    public async Task<MemberFitnessPlanDto?> GetPlanForInstructorAsync(int userId, int planId)
+    {
+        var instructorId = await GetInstructorIdAsync(userId);
+        if (instructorId is null)
+            return null;
+
+        var exists = await db.MemberFitnessPlans
+            .AnyAsync(p => p.PlanId == planId && p.InstructorId == instructorId);
+
+        return exists ? await GetPlanDtoAsync(planId) : null;
+    }
+
+    private async Task<MemberPlanRequestDto?> GetRequestDtoAsync(int requestId) =>
+        await db.MemberPlanRequests
+            .AsNoTracking()
+            .Where(r => r.RequestId == requestId)
+            .Select(MapRequestDtoExpression())
+            .FirstOrDefaultAsync();
+
     private async Task<MemberFitnessPlanDto?> GetPlanDtoAsync(int planId) =>
         await db.MemberFitnessPlans
-            .Include(p => p.Member).ThenInclude(m => m.User)
-            .Include(p => p.Instructor).ThenInclude(i => i.User)
+            .AsNoTracking()
             .Where(p => p.PlanId == planId)
             .Select(p => new MemberFitnessPlanDto(
                 p.PlanId,
+                p.RequestId,
                 p.MemberId,
                 p.Member.User.FirstName + " " + p.Member.User.LastName,
                 p.Member.IdentificationNumber,
                 p.InstructorId,
                 p.Instructor.User.FirstName + " " + p.Instructor.User.LastName,
-                p.Title,
-                p.FitnessGoal,
-                p.WorkoutPlan,
-                p.MealPlan,
+                p.PlanCategory,
+                p.Description,
                 p.Notes,
                 p.CreatedAt,
                 p.UpdatedAt))
             .FirstOrDefaultAsync();
+
+    private static System.Linq.Expressions.Expression<Func<MemberPlanRequest, MemberPlanRequestDto>> MapRequestDtoExpression() =>
+        r => new MemberPlanRequestDto(
+            r.RequestId,
+            r.MemberId,
+            r.Member.User.FirstName + " " + r.Member.User.LastName,
+            r.Member.IdentificationNumber,
+            r.InstructorId,
+            r.Instructor.User.FirstName + " " + r.Instructor.User.LastName,
+            r.PlanCategory,
+            r.MemberNote,
+            r.Status,
+            r.CreatedAt,
+            r.ApprovedAt,
+            r.PlanId);
+
+    private static System.Linq.Expressions.Expression<Func<MemberFitnessPlan, MemberFitnessPlanSummaryDto>> MapPlanSummaryExpression() =>
+        p => new MemberFitnessPlanSummaryDto(
+            p.PlanId,
+            p.MemberId,
+            p.Member.User.FirstName + " " + p.Member.User.LastName,
+            p.Member.IdentificationNumber,
+            p.Instructor.User.FirstName + " " + p.Instructor.User.LastName,
+            p.PlanCategory,
+            p.UpdatedAt);
 
     private async Task<int?> GetInstructorIdAsync(int userId) =>
         await db.Instructors.Where(i => i.UserId == userId).Select(i => (int?)i.InstructorId).FirstOrDefaultAsync();
@@ -194,18 +242,13 @@ public class MemberPlanService(AppDbContext db) : IMemberPlanService
     private async Task<int?> GetMemberIdAsync(int userId) =>
         await db.Members.Where(m => m.UserId == userId).Select(m => (int?)m.MemberId).FirstOrDefaultAsync();
 
-    private static void ValidatePlanContent(string title, string fitnessGoal, string workoutPlan, string mealPlan)
+    private static void ValidateRequestInput(int instructorId, string planCategory)
     {
-        if (string.IsNullOrWhiteSpace(title))
-            throw new InvalidOperationException("Plan title is required.");
+        if (instructorId <= 0)
+            throw new InvalidOperationException("Instructor is required.");
 
-        if (string.IsNullOrWhiteSpace(fitnessGoal))
-            throw new InvalidOperationException("Fitness goal is required.");
-
-        if (string.IsNullOrWhiteSpace(workoutPlan))
-            throw new InvalidOperationException("Workout plan content is required.");
-
-        if (string.IsNullOrWhiteSpace(mealPlan))
-            throw new InvalidOperationException("Meal plan content is required.");
+        var category = planCategory?.Trim() ?? string.Empty;
+        if (!ValidCategories.Contains(category))
+            throw new InvalidOperationException("Plan category must be Workout or Meal.");
     }
 }

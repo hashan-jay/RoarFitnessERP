@@ -12,7 +12,7 @@ public static class SpecialSessionHelper
     /// <summary>Derives the live status (Pending, Upcoming, Ongoing, Expired) from approval and time window.</summary>
     public static string GetRuntimeStatus(SpecialSession session, DateTime? now = null)
     {
-        now ??= DateTime.UtcNow;
+        now ??= AppTime.Now();
 
         if (session.Status == "Pending")
             return "Pending";
@@ -148,6 +148,28 @@ public class SpecialSessionService(AppDbContext db) : ISpecialSessionService
         return results;
     }
 
+    /// <summary>Returns accepted VIP sessions scheduled on a Colombo calendar date for the public website.</summary>
+    public async Task<IReadOnlyList<PublicVipSessionDto>> GetPublicAcceptedSessionsForDateAsync(DateTime colomboDate)
+    {
+        var (dayStart, dayEnd) = ProfileHelper.GetAppDayRange(colomboDate);
+
+        var sessions = await db.SpecialSessions
+            .AsNoTracking()
+            .Include(s => s.Instructor).ThenInclude(i => i.User)
+            .Where(s => s.Status == "Accepted" && s.StartDateTime >= dayStart && s.StartDateTime < dayEnd)
+            .OrderBy(s => s.StartDateTime)
+            .ToListAsync();
+
+        var results = new List<PublicVipSessionDto>();
+        foreach (var session in sessions)
+        {
+            var enrolledCount = await GetEnrolledCountAsync(session.SessionId);
+            results.Add(MapPublic(session, enrolledCount));
+        }
+
+        return results;
+    }
+
     /// <summary>Returns full session detail including enrollments when requested.</summary>
     public async Task<SpecialSessionDto?> GetSessionDetailAsync(int sessionId) =>
         await MapSessionAsync(sessionId, includeEnrollments: true);
@@ -164,7 +186,7 @@ public class SpecialSessionService(AppDbContext db) : ISpecialSessionService
 
         session.Status = "Accepted";
         session.ReviewedByUserId = adminUserId;
-        session.ReviewedAt = DateTime.UtcNow;
+        session.ReviewedAt = AppTime.Now();
         session.RejectionReason = null;
         await db.SaveChangesAsync();
 
@@ -180,7 +202,7 @@ public class SpecialSessionService(AppDbContext db) : ISpecialSessionService
 
         session.Status = "Rejected";
         session.ReviewedByUserId = adminUserId;
-        session.ReviewedAt = DateTime.UtcNow;
+        session.ReviewedAt = AppTime.Now();
         session.RejectionReason = string.IsNullOrWhiteSpace(request.RejectionReason)
             ? "Request rejected by management."
             : request.RejectionReason.Trim();
@@ -200,7 +222,7 @@ public class SpecialSessionService(AppDbContext db) : ISpecialSessionService
         if (memberId == 0)
             return [];
 
-        var now = DateTime.UtcNow;
+        var now = AppTime.Now();
         var enrolledSessionIds = await GetEnrolledSessionIdsAsync(memberId);
 
         var sessions = await db.SpecialSessions
@@ -264,7 +286,7 @@ public class SpecialSessionService(AppDbContext db) : ISpecialSessionService
         if (session is null || session.Status != "Accepted")
             throw new InvalidOperationException("This session is not available for enrollment.");
 
-        if (session.EndDateTime < DateTime.UtcNow)
+        if (session.EndDateTime < AppTime.Now())
             throw new InvalidOperationException("This session has already ended.");
 
         var enrolledCount = await GetEnrolledCountAsync(sessionId);
@@ -375,4 +397,18 @@ public class SpecialSessionService(AppDbContext db) : ISpecialSessionService
             session.CreatedAt,
             enrollments);
     }
+
+    private static PublicVipSessionDto MapPublic(SpecialSession session, int enrolledCount) =>
+        new(
+            session.SessionId,
+            session.Title,
+            session.Description,
+            ProfileHelper.ToUtcKind(session.StartDateTime),
+            ProfileHelper.ToUtcKind(session.EndDateTime),
+            session.FeePerPersonLKR,
+            session.MaxParticipants,
+            enrolledCount,
+            Math.Max(0, session.MaxParticipants - enrolledCount),
+            session.Instructor.User.FirstName + " " + session.Instructor.User.LastName,
+            session.InstructorId);
 }

@@ -21,6 +21,8 @@ public class AuthenticationController(IAuthenticationService auth) : ControllerB
     public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
         var result = await auth.LoginAsync(request);
+        if (result.IsTerminated)
+            return Unauthorized(new { message = "Your membership account has been terminated. Please contact the gym admin to rejoin." });
         if (result.IsPendingActivation)
             return Unauthorized(new { message = "Account pending payment. Complete membership payment on the Join page to activate login." });
         if (result.Response is null)

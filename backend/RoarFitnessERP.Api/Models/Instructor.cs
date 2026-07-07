@@ -12,11 +12,18 @@ public class Instructor
     public string? AddressLine1 { get; set; }
     public string? City { get; set; } = "Colombo";
     public string? Country { get; set; } = "Sri Lanka";
-    public string? EmergencyContactName { get; set; }
-    public string? EmergencyContactPhone { get; set; }
     public string? Specialization { get; set; }
+    public string? Bio { get; set; }
+    public int YearsExperience { get; set; }
+    public string? Qualification1 { get; set; }
+    public string? Qualification2 { get; set; }
+    public string? Speciality1 { get; set; }
+    public string? Speciality2 { get; set; }
+    public string? Speciality3 { get; set; }
     public string? ProfilePhotoUrl { get; set; }
-    public DateTime HireDate { get; set; } = DateTime.UtcNow.Date;
+    public DateTime HireDate { get; set; } = AppTime.Now().Date;
     public string? FingerprintTemplateId { get; set; }
     public bool IsFingerprintActivated { get; set; }
+    public bool IsTerminated { get; set; }
+    public DateTime? TerminatedAt { get; set; }
 }
