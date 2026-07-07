@@ -2,6 +2,9 @@ using System.Reflection;
 using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
+// ReSharper disable once RedundantUsingDirective
+using Microsoft.AspNetCore.Http;
+
 namespace RoarFitnessERP.Api.OpenApi;
 
 /// <summary>Registers Swagger/OpenAPI documentation with JWT security and module tags.</summary>
@@ -13,6 +16,14 @@ public static class OpenApiSetup
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(options =>
         {
+            // Required so multipart upload endpoints appear in Scalar/Swagger.
+            options.MapType<IFormFile>(() => new OpenApiSchema
+            {
+                Type = JsonSchemaType.String,
+                Format = "binary",
+            });
+            options.OperationFilter<FormFileOperationFilter>();
+
             options.SwaggerDoc("v1", new OpenApiInfo
             {
                 Title = "Roar Fitness ERP API",

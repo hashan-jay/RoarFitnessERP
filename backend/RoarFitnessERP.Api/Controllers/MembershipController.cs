@@ -179,12 +179,12 @@ public class MembershipController(IMembershipService membership) : ControllerBas
     [Consumes("multipart/form-data")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult> UploadInstructorPhoto(int instructorId, [FromForm] IFormFile photo)
+    public async Task<ActionResult> UploadInstructorPhoto(int instructorId, [FromForm] UploadInstructorPhotoForm form)
     {
-        if (photo is null || photo.Length <= 0)
+        if (form.Photo is null || form.Photo.Length <= 0)
             return BadRequest(new { message = "No photo file was received." });
 
-        var url = await membership.UploadInstructorPhotoAsync(instructorId, photo);
+        var url = await membership.UploadInstructorPhotoAsync(instructorId, form.Photo);
         return url is null
             ? BadRequest(new { message = "Could not upload photo. Use JPG, PNG, or WebP up to 5 MB." })
             : Ok(new { message = "Profile photo updated.", photoUrl = url });

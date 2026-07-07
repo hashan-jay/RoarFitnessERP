@@ -7,7 +7,34 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Extra retries when a stale RoarFitnessERP.Api.exe is still shutting down -->
+    <CopyRetryCount>20</CopyRetryCount>
+    <CopyRetryDelayMilliseconds>500</CopyRetryDelayMilliseconds>
   </PropertyGroup>
+
+  <!-- Debug: avoid RoarFitnessERP.Api.exe file locks and hot-reload exit -1 loops on Windows -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <UseAppHost>false</UseAppHost>
+    <HotReloadEnabled>false</HotReloadEnabled>
+  </PropertyGroup>
+
+  <!-- Prevent dotnet watch restart loops from build output and runtime uploads -->
+  <!-- Prevent dotnet watch restart loops from build output and runtime uploads -->
+  <ItemGroup>
+    <Watch Remove="**/bin/**" />
+    <Watch Remove="**/obj/**" />
+    <Watch Remove="**/wwwroot/uploads/**" />
+    <Watch Remove="**/*AssemblyInfo*.cs" />
+  </ItemGroup>
+
+  <!-- Before dotnet watch copies output, stop the running app (.NET Host) to avoid MSB3027 -->
+  <Target Name="StopRoarAppBeforeWatchCopy"
+          BeforeTargets="CopyFilesToOutputDirectory"
+          Condition="'$(DOTNET_WATCH)' == '1'">
+    <Message Importance="high" Text="dotnet watch: stopping running RoarFitnessERP.Api before rebuild..." />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\stop-app-only.ps1&quot;"
+          IgnoreExitCode="true" />
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />

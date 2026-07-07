@@ -1,13 +1,9 @@
-# Start the Roar Fitness API (stable — no dotnet watch file-lock loops).
+# Start the API without dotnet watch (most stable — use when watch keeps exiting)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 & "$PSScriptRoot\stop-api.ps1"
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
-
 Write-Host 'Building...'
 dotnet build
 if ($LASTEXITCODE -ne 0) {
@@ -15,5 +11,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host 'Starting API on http://localhost:5188 (Scalar: http://localhost:5188/scalar/v1) ...'
-Write-Host 'Tip: use .\run-api-watch.ps1 only if you need auto-rebuild on save.'
 dotnet run --launch-profile http --no-build

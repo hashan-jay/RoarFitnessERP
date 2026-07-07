@@ -1,6 +1,14 @@
+using Microsoft.AspNetCore.Http;
+
 namespace RoarFitnessERP.Api.DTOs;
 
 /// <summary>Request and response records exchanged between API controllers and services.</summary>
+
+/// <summary>Multipart form for instructor photo upload (Swagger/Scalar compatible).</summary>
+public sealed class UploadInstructorPhotoForm
+{
+    public required IFormFile Photo { get; init; }
+}
 
 // --- Authentication and registration ---
 public record LoginRequest(string Email, string Password);
@@ -290,7 +298,8 @@ public record MemberProfileDto(
     string? ActivePackageName,
     string? QueuedPackageName,
     DateTime? QueuedMembershipStartDate,
-    DateTime? QueuedMembershipEndDate);
+    DateTime? QueuedMembershipEndDate,
+    bool IsTerminated);
 
 public record AdminMemberListItemDto(
     int MemberId,

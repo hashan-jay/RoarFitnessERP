@@ -1,0 +1,29 @@
+Roar Fitness ERP — Backend API
+================================
+
+Correct folder:
+  C:\Users\HP\RoarFitnessERP\backend\RoarFitnessERP.Api
+
+Do NOT run bare "dotnet watch run" (causes file locks on Windows).
+
+Recommended commands (run inside this folder):
+
+  1. Stop stuck processes:
+     .\stop-api.ps1
+
+  2. Start API (stable — recommended):
+     .\run-api.ps1
+
+  3. Build only:
+     .\build-api.ps1
+
+  4. Auto-rebuild on save (optional):
+     .\watch-api.cmd
+
+API:    http://localhost:5188
+Scalar: http://localhost:5188/scalar/v1
+
+If MSB3027 / file lock errors appear:
+  - Press Ctrl+C in every terminal running the API
+  - Run .\stop-api.ps1
+  - Then .\run-api.ps1

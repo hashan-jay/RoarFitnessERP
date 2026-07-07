@@ -60,6 +60,7 @@ public class PaymentGatewayController(IPaymentGatewayService paymentGateway, App
     }
 
     /// <summary>PayHere IPN webhook — called by PayHere after payment completion.</summary>
+    [ApiExplorerSettings(IgnoreApi = true)]
     [HttpPost("webhook/payhere")]
     [Consumes("application/x-www-form-urlencoded", "multipart/form-data")]
     [ProducesResponseType(StatusCodes.Status200OK)]

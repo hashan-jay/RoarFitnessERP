@@ -250,7 +250,8 @@ public class MembershipService(AppDbContext db, InstructorPhotoStorage photoStor
             active?.Package.PackageName ?? lastMembership?.Package.PackageName,
             queued?.Package.PackageName,
             queued?.StartDate,
-            queued?.EndDate);
+            queued?.EndDate,
+            member.IsTerminated);
     }
 
     /// <summary>Builds the instructor profile DTO for the authenticated user.</summary>

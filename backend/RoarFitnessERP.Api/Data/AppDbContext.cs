@@ -1301,11 +1301,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         await SaveChangesAsync();
     }
 
-    /// <summary>Seeds five inactive members with expired memberships for admin renewal testing.</summary>
+    /// <summary>
+    /// Ensures 25 inactive members with expired memberships exist for portal/admin testing.
+    /// Idempotent: only inserts missing @expired-test.roarfitness.lk accounts; never updates existing data.
+    /// </summary>
     private async Task EnsureExpiredTestMembersAsync()
     {
+        const int targetCount = 25;
         const string markerDomain = "@expired-test.roarfitness.lk";
-        if (await Users.AnyAsync(u => u.Email.EndsWith(markerDomain)))
+
+        var existingCount = await Users.CountAsync(u => u.Email.EndsWith(markerDomain));
+        if (existingCount >= targetCount)
             return;
 
         var memberRole = await Roles.FirstOrDefaultAsync(r => r.RoleName == "Member");
@@ -1317,93 +1323,104 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             return;
 
         var today = ProfileHelper.GetAppToday();
-        var testMembers = new[]
+        var random = new Random(20260623);
+        var toAdd = targetCount - existingCount;
+
+        var existingEmails = await Users
+            .Where(u => u.Email.EndsWith(markerDomain))
+            .Select(u => u.Email)
+            .ToListAsync();
+        var emailSet = existingEmails.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var firstNames = new[]
         {
-            new ExpiredTestMemberSeed(
-                "Kasun", "Wickramasinghe", $"kasun.wickramasinghe{markerDomain}", "+94771234001",
-                "951234567V", new DateTime(1995, 3, 12), "Male", "12 Ward Place, Colombo 07", "Colombo", "Sri Lanka",
-                "Sunil Wickramasinghe", "+94771234002", today.AddDays(-6), true, 0),
-            new ExpiredTestMemberSeed(
-                "Nimali", "Jayawardena", $"nimali.jayawardena{markerDomain}", "+94772345001",
-                "962345678V", new DateTime(1996, 7, 24), "Female", "45 Lake Drive, Nugegoda", "Nugegoda", "Sri Lanka",
-                "Rohan Jayawardena", "+94772345002", today.AddDays(-19), false, 1),
-            new ExpiredTestMemberSeed(
-                "Tharindu", "Silva", $"tharindu.silva{markerDomain}", "+94773456001",
-                "973456789V", new DateTime(1997, 11, 8), "Male", "8 Station Road, Dehiwala", "Dehiwala", "Sri Lanka",
-                "Kumari Silva", "+94773456002", today.AddDays(-35), true, 0),
-            new ExpiredTestMemberSeed(
-                "Ayeshi", "Fernando", $"ayeshi.fernando{markerDomain}", "+94774567001",
-                "984567890V", new DateTime(1998, 1, 30), "Female", "22 Hill Street, Kandy", "Kandy", "Sri Lanka",
-                "Malini Fernando", "+94774567002", today.AddDays(-64), true, 2),
-            new ExpiredTestMemberSeed(
-                "Ravindu", "Perera", $"ravindu.perera{markerDomain}", "+94775678001",
-                "995678901V", new DateTime(1999, 9, 15), "Male", "3 Marine Drive, Negombo", "Negombo", "Sri Lanka",
-                "Dilshan Perera", "+94775678002", today.AddDays(-85), false, 1),
+            "Kasun", "Nimali", "Tharindu", "Ayeshi", "Ravindu", "Dilshan", "Sachini", "Imesh", "Harsha", "Malini",
+            "Pasindu", "Chathuri", "Nuwan", "Sanduni", "Lahiru", "Ishara", "Kavindu", "Dinithi", "Supun", "Amaya",
+            "Vihanga", "Yasith", "Tharushi", "Buddhika", "Shanika", "Gayan", "Piumi", "Rashmi", "Akila", "Dinesh",
+        };
+        var lastNames = new[]
+        {
+            "Wickramasinghe", "Jayawardena", "Silva", "Fernando", "Perera", "Ratnayake", "Bandara", "Karunaratne",
+            "Gunasekara", "Mendis", "Weerasinghe", "Dissanayake", "Abeysekera", "Rajapaksa", "Ekanayake", "Peiris",
+            "Amarasinghe", "Senanayake", "Wijesuriya", "Herath",
+        };
+        var cities = new[]
+        {
+            ("Colombo", "Colombo"), ("Nugegoda", "Nugegoda"), ("Dehiwala", "Dehiwala"), ("Kandy", "Kandy"),
+            ("Negombo", "Negombo"), ("Gampaha", "Gampaha"), ("Moratuwa", "Moratuwa"), ("Mount Lavinia", "Dehiwala"),
+            ("Panadura", "Panadura"), ("Kelaniya", "Kelaniya"),
         };
 
-        foreach (var seed in testMembers)
+        var created = 0;
+        var attempts = 0;
+        var maxAttempts = toAdd * 20;
+
+        while (created < toAdd && attempts < maxAttempts)
         {
-            var package = packages[Math.Min(seed.PackageIndex, packages.Count - 1)];
-            var endDate = seed.MembershipEndDate;
+            attempts++;
+
+            var firstName = firstNames[random.Next(firstNames.Length)];
+            var lastName = lastNames[random.Next(lastNames.Length)];
+            var suffix = random.Next(1000, 99999);
+            var email = $"{firstName}.{lastName}.{suffix}{markerDomain}".ToLowerInvariant();
+            if (!emailSet.Add(email))
+                continue;
+
+            var (city, cityLabel) = cities[random.Next(cities.Length)];
+            var gender = random.Next(2) == 0 ? "Male" : "Female";
+            var birthYear = random.Next(1990, 2004);
+            var birthMonth = random.Next(1, 13);
+            var birthDay = random.Next(1, 28);
+            var dateOfBirth = new DateTime(birthYear, birthMonth, birthDay);
+            var nicNumber = $"9{random.Next(10000000, 99999999)}V";
+            var phone = $"+9477{random.Next(1000000, 9999999)}";
+            var daysExpired = random.Next(3, 365);
+            var endDate = today.AddDays(-daysExpired);
+            var package = packages[random.Next(packages.Count)];
             var startDate = endDate.AddDays(-package.DurationDays);
+            var isFingerprintActivated = random.Next(100) < 65;
 
             var user = new User
             {
-                Email = seed.Email,
+                Email = email,
                 PasswordHash = AuthenticationService.HashPassword("Member@123"),
-                FirstName = seed.FirstName,
-                LastName = seed.LastName,
-                Phone = seed.Phone,
-                IsActive = true
+                FirstName = firstName,
+                LastName = lastName,
+                Phone = phone,
+                IsActive = true,
             };
             user.UserRoles.Add(new UserRole { Role = memberRole });
 
             var member = new Member
             {
                 User = user,
-                NicNumber = seed.NicNumber,
-                DateOfBirth = seed.DateOfBirth,
-                Gender = seed.Gender,
-                AddressLine1 = seed.AddressLine1,
-                City = seed.City,
-                Country = seed.Country,
-                EmergencyContactName = seed.EmergencyContactName,
-                EmergencyContactPhone = seed.EmergencyContactPhone,
-                IsFingerprintActivated = seed.IsFingerprintActivated,
-                FingerprintActivatedAt = seed.IsFingerprintActivated ? endDate.AddDays(-20) : null
+                NicNumber = nicNumber,
+                DateOfBirth = dateOfBirth,
+                Gender = gender,
+                AddressLine1 = $"{random.Next(1, 180)} Main Road, {cityLabel}",
+                City = city,
+                Country = "Sri Lanka",
+                EmergencyContactName = $"{firstNames[random.Next(firstNames.Length)]} {lastName}",
+                EmergencyContactPhone = $"+9476{random.Next(1000000, 9999999)}",
+                IsFingerprintActivated = isFingerprintActivated,
+                FingerprintActivatedAt = isFingerprintActivated ? endDate.AddDays(-random.Next(5, 40)) : null,
             };
 
             Users.Add(user);
             Members.Add(member);
             await SaveChangesAsync();
 
-            var membership = new Membership
+            Memberships.Add(new Membership
             {
                 MemberId = member.MemberId,
                 PackageId = package.PackageId,
                 StartDate = startDate,
                 EndDate = endDate,
-                IsActive = false
-            };
-            Memberships.Add(membership);
+                IsActive = false,
+            });
             await SaveChangesAsync();
+
+            created++;
         }
     }
-
-    private sealed record ExpiredTestMemberSeed(
-        string FirstName,
-        string LastName,
-        string Email,
-        string Phone,
-        string NicNumber,
-        DateTime DateOfBirth,
-        string Gender,
-        string AddressLine1,
-        string City,
-        string Country,
-        string EmergencyContactName,
-        string EmergencyContactPhone,
-        DateTime MembershipEndDate,
-        bool IsFingerprintActivated,
-        int PackageIndex);
 }

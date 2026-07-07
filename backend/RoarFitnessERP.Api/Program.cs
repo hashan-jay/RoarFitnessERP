@@ -114,6 +114,9 @@ if (app.Environment.IsDevelopment())
             .WithOpenApiRoutePattern("/swagger/{documentName}/swagger.json")
             .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
     });
+
+    // Root URL → Scalar docs (Swagger UI remains at /swagger).
+    app.MapGet("/", () => Results.Redirect("/scalar/v1")).ExcludeFromDescription();
 }
 
 app.UseCors("Frontend");

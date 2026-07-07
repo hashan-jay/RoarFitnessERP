@@ -1,0 +1,18 @@
+{
+  "hotReloadEnabled": false,
+  "watch": {
+    "exclude": [
+      "**/bin/**",
+      "**/obj/**",
+      "**/.vs/**",
+      "**/wwwroot/uploads/**",
+      "**/*.user",
+      "**/*.cache",
+      "**/*.dll",
+      "**/*.pdb",
+      "**/*.exe",
+      "**/*AssemblyInfo*.cs"
+    ]
+  }
+}
+
