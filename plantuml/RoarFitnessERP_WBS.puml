@@ -1,0 +1,133 @@
+@startwbs
+skinparam backgroundColor #FFFFFF
+skinparam wbs {
+  BackgroundColor #F8FAFC
+  LineColor #334155
+  FontColor #0F172A
+  FontSize 13
+}
+title Roar Fitness ERP System\nWork Breakdown Structure (WBS)
+
+* Roar Fitness ERP\nWeb System
+** 1.0 Project Planning\n&amp; Requirements
+*** 1.1 Stakeholder\nInterviews
+*** 1.2 Problem Statement\n&amp; Scope Definition
+*** 1.3 Functional\nRequirements
+*** 1.4 Non-Functional\nRequirements
+** 2.0 System Analysis\n&amp; Design
+*** 2.1 System Architecture\n(3-Tier Client-Server)
+*** 2.2 Database Design\n(SQL Server / EF Core)
+*** 2.3 REST API Design\n(ASP.NET Core Web API)
+*** 2.4 UI/UX Design\n(React.js SPA)
+** 3.0 Backend Development\n(ASP.NET Core Web API)
+*** 3.1 Authentication\n&amp; Authorization
+**** JWT Login
+**** Role-Based Access\n(Admin / Member / Instructor)
+**** BCrypt Password Hashing
+*** 3.2 Membership\nManagement
+**** Member Registration
+**** Profile Management
+**** Package Configuration
+**** Walk-in Member Creation
+**** In-Gym Renewal
+**** Restrict / Reinstate Accounts
+*** 3.3 Payment Gateway\n(PayHere)
+**** Membership Payment
+**** Online Renewal Payment
+**** VIP Session Payment
+**** IPN Webhook Handler
+*** 3.4 Attendance\n&amp; Fingerprint
+**** Entry Scan Validation
+**** Fingerprint Activation
+**** Attendance Log Retrieval
+*** 3.5 Member Plans\n(Workout / Meal)
+**** Plan Request Submission
+**** Instructor Plan Approval
+*** 3.6 VIP Sessions\n(Special Sessions)
+**** Instructor Session Proposals
+**** Admin Approve / Reject
+**** Member Enrollment
+*** 3.7 General Classes
+**** Admin Timetable CRUD
+**** Instructor Schedule API
+**** Public Schedule API
+*** 3.8 Public Content API
+**** Packages &amp; Trainers
+**** Contact Form / Inquiries
+*** 3.9 Inventory\nManagement
+**** Product CRUD
+**** Stock Adjustments
+**** Category Management
+*** 3.10 Point of Sale\n(POS)
+**** In-Gym Sales Processing
+**** Inventory Deduction
+**** Cash / Card Payments
+*** 3.11 Revenue Reports
+**** Summary Analytics
+**** Monthly Printable Report
+*** 3.12 Visitor Inquiries
+**** Inquiry Storage &amp; Retrieval
+** 4.0 Frontend Development\n(React.js)
+*** 4.1 Public Website
+**** Home Page\n(Hero, Plans, Trainers, Testimonials)
+**** About Page
+**** Classes Schedule Page
+**** Join / Register /\nPayment Flow
+**** Login Page
+**** Contact Form
+*** 4.2 Member Portal
+**** Dashboard &amp;\nAttendance Calendar
+**** Workout / Meal\nPlan Requests
+**** General Classes\n(View-Only Timetable)
+**** VIP Session Browse\n&amp; Enrollment
+**** Membership Renewal
+**** Profile Management
+**** Expired / Restricted\nAccount Handling
+*** 4.3 Instructor Portal
+**** Dashboard &amp;\nBMI Calculator
+**** Plan Request\nApproval
+**** VIP Session\nProposals
+**** My General Classes
+**** Attendance History
+**** Profile Management
+*** 4.4 Admin Portal
+**** Dashboard Overview
+**** Members Management
+**** Membership Renewals
+**** Instructors Management
+**** Packages Management
+**** General Classes\nManagement
+**** VIP Sessions\nApproval &amp; Calendar
+**** Attendance Logs
+**** Inventory Management
+**** POS Billing
+**** Revenue Analytics
+**** Visitor Inquiries
+*** 4.5 Shared Frontend\nInfrastructure
+**** Auth Context &amp;\nProtected Routes
+**** API Client &amp;\nService Layer
+**** Responsive Layouts\n&amp; Navigation
+** 5.0 System Integration
+*** 5.1 Fingerprint Biometric\nSimulator (React)
+**** Gate Scan Panel
+**** Fingerprint Enroll Panel
+**** Today&apos;s Logs Panel
+*** 5.2 PayHere Payment\nGateway Integration
+*** 5.3 POS &amp; Inventory\nRevenue Integration
+*** 5.4 API Proxy &amp;\nStatic File Hosting
+** 6.0 Database\nImplementation
+*** 6.1 Schema Creation\n(001_CreateSchema.sql)
+*** 6.2 Seed Data\n(002_SeedData.sql)
+*** 6.3 EF Core DbContext\n&amp; Schema Patching
+** 7.0 Testing &amp;\nQuality Assurance
+*** 7.1 API Integration Testing
+*** 7.2 Portal Functional Testing
+*** 7.3 Payment Flow Testing
+*** 7.4 Fingerprint Access\nTesting
+*** 7.5 Security &amp;\nValidation Testing
+** 8.0 Deployment &amp;\nDocumentation
+*** 8.1 Development Environment\nSetup Scripts
+*** 8.2 API Documentation\n(Swagger / Scalar)
+*** 8.3 Final Project Report\n&amp; Diagrams
+
+@endwbs
