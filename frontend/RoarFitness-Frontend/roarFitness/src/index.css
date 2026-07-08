@@ -1,0 +1,465 @@
+@import "tailwindcss";
+
+/* Design tokens — aligned with the IronX hero mockup */
+@theme {
+  --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bebas Neue", "Oswald", ui-sans-serif, sans-serif;
+  --font-portal: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-portal-display: "Syne", ui-sans-serif, system-ui, sans-serif;
+  --color-surface: #f2f2f2;
+  --color-brand-ink: #0a0a0a;
+  --color-brand-muted: #5c5c5c;
+  --color-brand-divider: #c8c8c8;
+  --color-features-bg: #121212;
+  --color-features-muted: #808080;
+  --color-features-body: #a0a0a0;
+  /* Member portal — modern minimal light theme */
+  --color-portal-canvas: #f7f8fa;
+  --color-portal-ink: #111827;
+  --color-portal-muted: #6b7280;
+  --color-portal-accent: #111827;
+  --color-portal-accent-soft: #f3f4f6;
+  --color-portal-side: #ffffff;
+  --color-portal-card: #ffffff;
+  --color-portal-line: #e5e7eb;
+  --color-portal-mint: #059669;
+}
+
+/* Shared portal typography (member + instructor dashboards) */
+.app-portal,
+.member-portal {
+  font-family: var(--font-portal);
+  color: var(--color-portal-ink);
+}
+
+.app-portal h1,
+.app-portal h2,
+.app-portal h3,
+.app-portal .portal-display,
+.member-portal h1,
+.member-portal h2,
+.member-portal h3,
+.member-portal .portal-display {
+  font-family: var(--font-portal);
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+
+/* Soft 3D elevation for dashboard widgets */
+.app-portal .portal-widget-3d,
+.member-portal .portal-widget-3d {
+  transform: translateY(0);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.05),
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 6px 12px -2px rgba(15, 23, 42, 0.08),
+    0 14px 28px -6px rgba(15, 23, 42, 0.1),
+    0 24px 40px -12px rgba(15, 23, 42, 0.08);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.app-portal .portal-widget-3d:hover,
+.member-portal .portal-widget-3d:hover {
+  transform: translateY(-6px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.06),
+    0 2px 4px rgba(15, 23, 42, 0.05),
+    0 10px 18px -4px rgba(15, 23, 42, 0.1),
+    0 22px 36px -8px rgba(15, 23, 42, 0.14),
+    0 36px 56px -14px rgba(15, 23, 42, 0.12);
+}
+
+/* Base resets for a clean full-page layout */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--color-surface);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Respect reduced-motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Animated BMI calculator — member & instructor portals */
+.app-portal .portal-bmi-section__list,
+.member-portal .portal-bmi-section__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.app-portal .portal-bmi-section__list li,
+.member-portal .portal-bmi-section__list li {
+  position: relative;
+  padding-left: 1rem;
+}
+
+.app-portal .portal-bmi-section__list li::before,
+.member-portal .portal-bmi-section__list li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: #9ca3af;
+}
+
+.app-portal .portal-bmi-calculator,
+.member-portal .portal-bmi-calculator {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+
+.app-portal .portal-bmi-calculator__gauge,
+.member-portal .portal-bmi-calculator__gauge {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  margin: 0 auto 1.25rem;
+}
+
+.app-portal .portal-bmi-calculator__ring,
+.member-portal .portal-bmi-calculator__ring {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.app-portal .portal-bmi-calculator__ring-bg,
+.member-portal .portal-bmi-calculator__ring-bg {
+  fill: none;
+  stroke: #e5e7eb;
+  stroke-width: 6;
+}
+
+.app-portal .portal-bmi-calculator__ring-fill,
+.member-portal .portal-bmi-calculator__ring-fill {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 328;
+  stroke-dashoffset: 328;
+}
+
+.app-portal .portal-bmi-calculator__value,
+.member-portal .portal-bmi-calculator__value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-portal .portal-bmi-calculator__number,
+.member-portal .portal-bmi-calculator__number {
+  font-family: var(--font-portal);
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.app-portal .portal-bmi-calculator__label,
+.member-portal .portal-bmi-calculator__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+.app-portal .portal-bmi-calculator__category,
+.member-portal .portal-bmi-calculator__category {
+  display: inline-block;
+  padding: 0.35rem 0.85rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  margin-bottom: 1.25rem;
+}
+
+.app-portal .portal-bmi-calculator__scale-wrap,
+.member-portal .portal-bmi-calculator__scale-wrap {
+  width: 100%;
+  margin-bottom: 1.25rem;
+}
+
+.app-portal .portal-bmi-calculator__scale,
+.member-portal .portal-bmi-calculator__scale {
+  position: relative;
+  display: flex;
+  gap: 3px;
+  height: 10px;
+  border-radius: 0.375rem;
+  overflow: visible;
+}
+
+.app-portal .portal-bmi-calculator__scale-segment,
+.member-portal .portal-bmi-calculator__scale-segment {
+  flex: 1;
+  border-radius: 2px;
+  opacity: 0.35;
+  transform: scaleY(1);
+}
+
+.app-portal .portal-bmi-calculator__scale-segment--active,
+.member-portal .portal-bmi-calculator__scale-segment--active {
+  opacity: 1;
+  transform: scaleY(1.35);
+}
+
+.app-portal .portal-bmi-calculator__scale-marker,
+.member-portal .portal-bmi-calculator__scale-marker {
+  position: absolute;
+  top: -5px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid transparent;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.app-portal .portal-bmi-calculator__scale-labels,
+.member-portal .portal-bmi-calculator__scale-labels {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.625rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+.app-portal .portal-bmi-calculator__formula,
+.member-portal .portal-bmi-calculator__formula {
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  color: #6b7280;
+}
+
+.app-portal .portal-bmi-calculator__range,
+.member-portal .portal-bmi-calculator__range {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: #111827;
+  padding: 0.5rem 0.75rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  transition: background-color 0.4s ease;
+}
+
+.app-portal .portal-bmi-calculator__note,
+.member-portal .portal-bmi-calculator__note {
+  margin-top: 1.25rem;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  line-height: 1.5;
+}
+
+/* Printable bills and monthly reports */
+.print-only {
+  display: none;
+}
+
+.pos-bill-print-source,
+.monthly-report-print-source {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+}
+
+.pos-bill-document {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  font-family: var(--font-portal);
+  color: #111;
+}
+
+.pos-bill-document__header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #111;
+  padding-bottom: 1rem;
+}
+
+.pos-bill-document__header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+}
+
+.pos-bill-document__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.9375rem;
+}
+
+.pos-bill-document__meta span {
+  display: block;
+  color: #555;
+  font-size: 0.8125rem;
+}
+
+.pos-bill-document__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+}
+
+.pos-bill-document__table th,
+.pos-bill-document__table td {
+  border-bottom: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.pos-bill-document__totals {
+  margin-left: auto;
+  width: min(100%, 280px);
+}
+
+.pos-bill-document__totals > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+}
+
+.pos-bill-document__grand {
+  border-top: 2px solid #111;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  font-size: 1.125rem;
+}
+
+.pos-bill-document__footer {
+  margin-top: 2rem;
+  text-align: center;
+  color: #555;
+  font-size: 0.875rem;
+}
+
+.print-breakdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.print-breakdown-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #ddd;
+}
+
+.print-breakdown-total {
+  font-weight: 700;
+  border-top: 2px solid #111;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.print-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.print-table th,
+.print-table td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  .print-header {
+    margin-bottom: 1.5rem;
+  }
+
+  .print-section {
+    break-inside: avoid;
+    margin-bottom: 1.5rem;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  body.printing-pos-bill * {
+    visibility: hidden !important;
+  }
+
+  body.printing-pos-bill .pos-bill-print-source,
+  body.printing-pos-bill .pos-bill-print-source * {
+    visibility: visible !important;
+  }
+
+  body.printing-pos-bill .pos-bill-print-source {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  body.printing-monthly-report * {
+    visibility: hidden !important;
+  }
+
+  body.printing-monthly-report .monthly-report-print-source,
+  body.printing-monthly-report .monthly-report-print-source * {
+    visibility: visible !important;
+  }
+
+  body.printing-monthly-report .monthly-report-print-source {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}

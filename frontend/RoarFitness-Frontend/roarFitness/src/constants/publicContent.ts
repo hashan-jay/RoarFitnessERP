@@ -1,0 +1,1 @@
+export const PUBLIC_TRAINER_LIMIT = 12
