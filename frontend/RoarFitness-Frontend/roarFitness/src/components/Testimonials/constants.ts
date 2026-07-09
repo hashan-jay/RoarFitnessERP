@@ -22,7 +22,7 @@ export const TESTIMONIALS_COPY = {
 
 export const TESTIMONIAL_STATS: TestimonialStat[] = [
   { id: 'rating', value: '9.1', label: 'Member rating' },
-  { id: 'members', value: '400+', label: 'Active members' },
+  { id: 'members', value: '250+', label: 'Active members' },
   { id: 'retention', value: '98%', label: 'Renewal rate' },
 ]
 

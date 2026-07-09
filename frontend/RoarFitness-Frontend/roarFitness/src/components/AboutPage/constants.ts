@@ -30,8 +30,8 @@ export const ABOUT_COPY = {
 
 export const ABOUT_STATS = [
   { id: 'founded', value: '2018', label: 'Established' },
-  { id: 'members', value: '400+', label: 'Active members' },
-  { id: 'coaches', value: '15+', label: 'Expert coaches' },
+  { id: 'members', value: '250+', label: 'Active members' },
+  { id: 'coaches', value: '8+', label: 'Expert coaches' },
   { id: 'classes', value: '40+', label: 'Weekly classes' },
 ] as const
 
@@ -89,8 +89,8 @@ export const ABOUT_MILESTONES = [
   {
     id: '2024',
     year: '2024',
-    title: '400+ members',
-    body: 'The community crosses 400 active members with instructor-led sessions and digital member tools.',
+    title: '250+ members',
+    body: 'The community crosses 250 active members with instructor-led sessions and digital member tools.',
   },
 ] as const
 
