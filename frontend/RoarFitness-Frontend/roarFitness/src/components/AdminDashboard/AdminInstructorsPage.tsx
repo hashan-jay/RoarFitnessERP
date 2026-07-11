@@ -27,7 +27,7 @@ const EMPTY_FORM = {
   specialization: '',
   addressLine1: '',
   country: 'Sri Lanka',
-  yearsExperience: 0,
+  yearsExperience: '' as number | '',
   qualification1: '',
   qualification2: '',
   speciality1: '',
@@ -72,6 +72,8 @@ export function AdminInstructorsPage() {
       const result = await membershipService.createInstructor({
         ...payload,
         email: payload.email.trim().toLowerCase(),
+        yearsExperience:
+          payload.yearsExperience === '' ? 0 : Number(payload.yearsExperience),
       })
       toast.success(`Instructor created: ${result.identificationNumber}`)
       setShowCreateForm(false)
@@ -162,8 +164,33 @@ export function AdminInstructorsPage() {
             <input className={inputClass} placeholder="Confirm password" type="password" required minLength={8} value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} />
             <input className={inputClass} placeholder="Specialization" value={form.specialization} onChange={(e) => setForm({ ...form, specialization: e.target.value })} />
             <input className={inputClass} placeholder="NIC" value={form.nicNumber} onChange={(e) => setForm({ ...form, nicNumber: e.target.value })} />
-            <input className={inputClass} type="date" value={form.dateOfBirth} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} />
-            <input className={inputClass} type="number" min={0} placeholder="Years of experience" value={form.yearsExperience} onChange={(e) => setForm({ ...form, yearsExperience: Math.max(0, Number(e.target.value) || 0) })} />
+            <div className="relative">
+              <input
+                className={`${inputClass} ${!form.dateOfBirth ? 'text-transparent' : ''}`}
+                type="date"
+                value={form.dateOfBirth}
+                onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
+              />
+              {!form.dateOfBirth && (
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-portal-muted">
+                  Date of Birth
+                </span>
+              )}
+            </div>
+            <input
+              className={inputClass}
+              type="number"
+              min={0}
+              placeholder="Years of Experience"
+              value={form.yearsExperience}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  yearsExperience:
+                    e.target.value === '' ? '' : Math.max(0, Number(e.target.value) || 0),
+                })
+              }
+            />
             <input className={inputClass} placeholder="Qualification 1" value={form.qualification1} onChange={(e) => setForm({ ...form, qualification1: e.target.value })} />
             <input className={inputClass} placeholder="Qualification 2" value={form.qualification2} onChange={(e) => setForm({ ...form, qualification2: e.target.value })} />
             <input className={inputClass} placeholder="Speciality 1" value={form.speciality1} onChange={(e) => setForm({ ...form, speciality1: e.target.value })} />

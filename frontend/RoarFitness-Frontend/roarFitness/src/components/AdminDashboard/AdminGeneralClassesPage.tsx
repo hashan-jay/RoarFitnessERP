@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 
 import { WEEKDAY_LABELS } from '../ClassesPage/scheduleData'
@@ -23,14 +23,57 @@ const STUDIOS = [
   'Performance Zone',
 ] as const
 
+function normalizeTimeValue(value?: string): string {
+  if (!value) return ''
+  const match = value.match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return value
+  return `${match[1].padStart(2, '0')}:${match[2]}`
+}
+
+function parseTimeRange(timeRange: string): { startTime: string; endTime: string } {
+  const [startRaw, endRaw] = timeRange.split('-').map((part) => part.trim())
+  return {
+    startTime: normalizeTimeValue(startRaw) || '06:00',
+    endTime: normalizeTimeValue(endRaw) || '07:00',
+  }
+}
+
+function formatTimeRange(startTime: string, endTime: string): string {
+  return `${startTime} - ${endTime}`
+}
+
+function calculateDurationMinutes(startTime: string, endTime: string): number | null {
+  const [startHours, startMinutes] = startTime.split(':').map(Number)
+  const [endHours, endMinutes] = endTime.split(':').map(Number)
+
+  if (
+    Number.isNaN(startHours) ||
+    Number.isNaN(startMinutes) ||
+    Number.isNaN(endHours) ||
+    Number.isNaN(endMinutes)
+  ) {
+    return null
+  }
+
+  const startTotal = startHours * 60 + startMinutes
+  const endTotal = endHours * 60 + endMinutes
+  if (endTotal <= startTotal) return null
+
+  return endTotal - startTotal
+}
+
+function formatDurationLabel(minutes: number): string {
+  return `${minutes} min`
+}
+
 type GeneralClassFormState = {
   title: string
   category: GeneralClassCategory
   description: string
   instructorId: string
   weekday: string
-  timeRange: string
-  duration: string
+  startTime: string
+  endTime: string
   studio: string
   isActive: boolean
 }
@@ -41,8 +84,8 @@ const EMPTY_FORM: GeneralClassFormState = {
   description: '',
   instructorId: '',
   weekday: '1',
-  timeRange: '06:00 - 07:00',
-  duration: '60 min',
+  startTime: '06:00',
+  endTime: '07:00',
   studio: STUDIOS[0],
   isActive: true,
 }
@@ -112,6 +155,7 @@ export function AdminGeneralClassesPage() {
   }
 
   const openEditModal = (record: GeneralClassRecord) => {
+    const { startTime, endTime } = parseTimeRange(record.timeRange)
     setEditingId(record.generalClassId)
     setForm({
       title: record.title,
@@ -123,8 +167,8 @@ export function AdminGeneralClassesPage() {
       description: record.description,
       instructorId: String(record.instructorId),
       weekday: String(record.weekday),
-      timeRange: record.timeRange,
-      duration: record.duration,
+      startTime,
+      endTime,
       studio: STUDIOS.includes(record.studio as (typeof STUDIOS)[number])
         ? record.studio
         : STUDIOS[0],
@@ -132,6 +176,16 @@ export function AdminGeneralClassesPage() {
     })
     setFormModalOpen(true)
   }
+
+  const computedDuration = useMemo(() => {
+    const minutes = calculateDurationMinutes(form.startTime, form.endTime)
+    return minutes ? formatDurationLabel(minutes) : ''
+  }, [form.startTime, form.endTime])
+
+  const computedTimeRange = useMemo(
+    () => formatTimeRange(form.startTime, form.endTime),
+    [form.startTime, form.endTime],
+  )
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -147,8 +201,16 @@ export function AdminGeneralClassesPage() {
       toast.error('Select an instructor.')
       return
     }
-    if (!form.timeRange.trim() || !form.duration.trim() || !form.studio.trim()) {
-      toast.error('Time, duration, and studio are required.')
+    if (!form.startTime || !form.endTime) {
+      toast.error('Select start and end times.')
+      return
+    }
+    if (form.endTime <= form.startTime) {
+      toast.error('End time must be after start time.')
+      return
+    }
+    if (!computedDuration || !form.studio.trim()) {
+      toast.error('Time range and studio are required.')
       return
     }
 
@@ -158,8 +220,8 @@ export function AdminGeneralClassesPage() {
       description: form.description.trim(),
       instructorId,
       weekday,
-      timeRange: form.timeRange.trim(),
-      duration: form.duration.trim(),
+      timeRange: computedTimeRange,
+      duration: computedDuration,
       studio: form.studio.trim(),
     }
 
@@ -367,27 +429,65 @@ export function AdminGeneralClassesPage() {
                   </select>
                 </label>
 
+                <div className="block sm:col-span-2">
+                  <span className="mb-1.5 block text-xs text-portal-muted">Time range</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] text-portal-muted">Start time</span>
+                      <input
+                        type="time"
+                        value={form.startTime}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, startTime: event.target.value }))
+                        }
+                        required
+                        className="w-full rounded-lg border border-portal-line bg-portal-canvas px-3 py-2.5 text-sm outline-none focus:border-portal-ink"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] text-portal-muted">End time</span>
+                      <input
+                        type="time"
+                        value={form.endTime}
+                        min={form.startTime || undefined}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, endTime: event.target.value }))
+                        }
+                        required
+                        className="w-full rounded-lg border border-portal-line bg-portal-canvas px-3 py-2.5 text-sm outline-none focus:border-portal-ink"
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 <label className="block">
                   <span className="mb-1.5 block text-xs text-portal-muted">Time</span>
                   <input
-                    value={form.timeRange}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, timeRange: event.target.value }))
+                    value={
+                      form.startTime && form.endTime && form.endTime > form.startTime
+                        ? computedTimeRange
+                        : 'Select start and end times'
                     }
-                    placeholder="06:00 - 07:00"
-                    className="w-full rounded-lg border border-portal-line bg-portal-canvas px-3 py-2.5 text-sm outline-none focus:border-portal-ink"
+                    readOnly
+                    tabIndex={-1}
+                    aria-readonly="true"
+                    className="w-full cursor-not-allowed rounded-lg border border-portal-line bg-portal-canvas/70 px-3 py-2.5 text-sm text-portal-ink outline-none"
                   />
                 </label>
 
                 <label className="block">
                   <span className="mb-1.5 block text-xs text-portal-muted">Duration</span>
                   <input
-                    value={form.duration}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, duration: event.target.value }))
+                    value={
+                      computedDuration ||
+                      (form.startTime && form.endTime && form.endTime <= form.startTime
+                        ? 'End time must be after start time'
+                        : 'Auto-calculated from time range')
                     }
-                    placeholder="60 min"
-                    className="w-full rounded-lg border border-portal-line bg-portal-canvas px-3 py-2.5 text-sm outline-none focus:border-portal-ink"
+                    readOnly
+                    tabIndex={-1}
+                    aria-readonly="true"
+                    className="w-full cursor-not-allowed rounded-lg border border-portal-line bg-portal-canvas/70 px-3 py-2.5 text-sm text-portal-muted outline-none"
                   />
                 </label>
 

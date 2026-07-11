@@ -1,10 +1,13 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react'
 
 import { parsePlanPackageId } from '../../adapters/packageAdapter'
+import { isAdultFromDateOfBirth } from '../../lib/datetime'
 import { formatDate } from '../../lib/formatters'
 import type { AdminMemberListItem, MemberListSection } from '../../types/api'
 import { membershipService } from '../../services'
 import { getPackages, loadPackagesFromApi } from '../../utils/packageStorage'
+import { validateNicNumber } from '../../utils/validation'
+import { getRegisterNicLabel } from '../Register/registerValidation'
 import { AdminAccountConfirmModal } from './AdminAccountConfirmModal'
 import { AdminMemberAccountModal } from './AdminMemberAccountModal'
 import { AdminMembersNav } from './AdminMembersNav'
@@ -41,6 +44,18 @@ const EMPTY_CREATE_FORM = {
 
 type ConfirmAction = { type: 'terminate' | 'reinstate'; member: AdminMemberListItem }
 
+type CreateFormErrors = {
+  gender?: string
+  nicNumber?: string
+  confirmPassword?: string
+}
+
+function getConfirmPasswordError(password: string, confirmPassword: string): string | undefined {
+  if (!confirmPassword.trim()) return undefined
+  if (password !== confirmPassword) return 'Passwords do not match.'
+  return undefined
+}
+
 export function AdminMembersPage() {
   const toast = usePortalToast()
   const [packages, setPackages] = useState(() => getPackages())
@@ -56,6 +71,75 @@ export function AdminMembersPage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirmLoading, setConfirmLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [createFormErrors, setCreateFormErrors] = useState<CreateFormErrors>({})
+
+  const nicLabel = useMemo(
+    () => getRegisterNicLabel(createForm.dateOfBirth),
+    [createForm.dateOfBirth],
+  )
+
+  const isNicRequired = useMemo(
+    () => isAdultFromDateOfBirth(createForm.dateOfBirth),
+    [createForm.dateOfBirth],
+  )
+
+  const confirmPasswordError = useMemo(
+    () => getConfirmPasswordError(createForm.password, createForm.confirmPassword),
+    [createForm.password, createForm.confirmPassword],
+  )
+
+  const updateCreateForm = <K extends keyof typeof EMPTY_CREATE_FORM>(
+    field: K,
+    value: (typeof EMPTY_CREATE_FORM)[K],
+  ) => {
+    setCreateForm((prev) => {
+      const next = { ...prev, [field]: value }
+
+      if (field === 'dateOfBirth') {
+        const nicError = validateNicNumber(next.nicNumber, next.dateOfBirth)
+        setCreateFormErrors((prevErrors) => {
+          const updated = { ...prevErrors }
+          if (nicError) updated.nicNumber = nicError
+          else delete updated.nicNumber
+          return updated
+        })
+      }
+
+      if (field === 'password' || field === 'confirmPassword') {
+        const matchError = getConfirmPasswordError(
+          field === 'password' ? String(value) : next.password,
+          field === 'confirmPassword' ? String(value) : next.confirmPassword,
+        )
+        setCreateFormErrors((prevErrors) => {
+          const updated = { ...prevErrors }
+          if (matchError) updated.confirmPassword = matchError
+          else delete updated.confirmPassword
+          return updated
+        })
+      }
+
+      if (field === 'gender' && value) {
+        setCreateFormErrors((prevErrors) => {
+          if (!prevErrors.gender) return prevErrors
+          const updated = { ...prevErrors }
+          delete updated.gender
+          return updated
+        })
+      }
+
+      if (field === 'nicNumber') {
+        const nicError = validateNicNumber(String(value), next.dateOfBirth)
+        setCreateFormErrors((prevErrors) => {
+          const updated = { ...prevErrors }
+          if (nicError) updated.nicNumber = nicError
+          else delete updated.nicNumber
+          return updated
+        })
+      }
+
+      return next
+    })
+  }
 
   const refresh = async (section: MemberListSection = tab) => {
     const [nextMembers, nextPackages] = await Promise.all([
@@ -84,8 +168,26 @@ export function AdminMembersPage() {
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault()
 
-    if (createForm.password !== createForm.confirmPassword) {
-      toast.error('Passwords do not match.')
+    const nextErrors: CreateFormErrors = {}
+
+    if (!createForm.gender.trim()) {
+      nextErrors.gender = 'Please select a gender.'
+    }
+
+    const nicError = validateNicNumber(createForm.nicNumber, createForm.dateOfBirth)
+    if (nicError) {
+      nextErrors.nicNumber = nicError
+    }
+
+    const passwordError = getConfirmPasswordError(createForm.password, createForm.confirmPassword)
+    if (passwordError) {
+      nextErrors.confirmPassword = passwordError
+    } else if (!createForm.confirmPassword.trim()) {
+      nextErrors.confirmPassword = 'Please confirm the password.'
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setCreateFormErrors(nextErrors)
       return
     }
 
@@ -106,6 +208,7 @@ export function AdminMembersPage() {
       toast.success(`Member created: ${result.identificationNumber}`)
       setShowCreateForm(false)
       setCreateForm({ ...EMPTY_CREATE_FORM, planId: packages[0]?.id ?? '' })
+      setCreateFormErrors({})
       await refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to create member.')
@@ -156,7 +259,10 @@ export function AdminMembersPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowCreateForm((open) => !open)}
+          onClick={() => {
+            setShowCreateForm((open) => !open)
+            setCreateFormErrors({})
+          }}
           className={primaryBtnClass}
         >
           {showCreateForm ? 'Cancel' : '+ Create member'}
@@ -196,31 +302,90 @@ export function AdminMembersPage() {
         >
           <h2 className="text-sm font-semibold text-portal-ink">Create new member</h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className={inputClass} placeholder="First name" required value={createForm.firstName} onChange={(e) => setCreateForm({ ...createForm, firstName: e.target.value })} />
-            <input className={inputClass} placeholder="Last name" required value={createForm.lastName} onChange={(e) => setCreateForm({ ...createForm, lastName: e.target.value })} />
-            <input className={inputClass} placeholder="Email" type="email" required value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} />
-            <input className={inputClass} placeholder="Contact number" value={createForm.phone} onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })} />
-            <input className={inputClass} placeholder="Password" type="password" required minLength={8} value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} />
-            <input className={inputClass} placeholder="Confirm password" type="password" required minLength={8} value={createForm.confirmPassword} onChange={(e) => setCreateForm({ ...createForm, confirmPassword: e.target.value })} />
-            <input className={inputClass} placeholder="NIC" value={createForm.nicNumber} onChange={(e) => setCreateForm({ ...createForm, nicNumber: e.target.value })} />
-            <input className={inputClass} type="date" value={createForm.dateOfBirth} onChange={(e) => setCreateForm({ ...createForm, dateOfBirth: e.target.value })} />
-            <select className={inputClass} value={createForm.gender} onChange={(e) => setCreateForm({ ...createForm, gender: e.target.value })}>
-              <option value="">Gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </select>
-            <input className={inputClass} placeholder="City" value={createForm.city} onChange={(e) => setCreateForm({ ...createForm, city: e.target.value })} />
-            <input className={`${inputClass} sm:col-span-2`} placeholder="Address" value={createForm.addressLine1} onChange={(e) => setCreateForm({ ...createForm, addressLine1: e.target.value })} />
-            <input className={inputClass} placeholder="Emergency contact name" value={createForm.emergencyContactName} onChange={(e) => setCreateForm({ ...createForm, emergencyContactName: e.target.value })} />
-            <input className={inputClass} placeholder="Emergency contact number" value={createForm.emergencyContactPhone} onChange={(e) => setCreateForm({ ...createForm, emergencyContactPhone: e.target.value })} />
-            <select className={`${inputClass} sm:col-span-2`} value={createForm.planId} onChange={(e) => setCreateForm({ ...createForm, planId: e.target.value })}>
-              {packages.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.name} — LKR {plan.price.toLocaleString('en-LK')}
+            <CreateFormField id="create-member-first-name" label="First name">
+              <input id="create-member-first-name" className={inputClass} placeholder="First name" required value={createForm.firstName} onChange={(e) => updateCreateForm('firstName', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-last-name" label="Last name">
+              <input id="create-member-last-name" className={inputClass} placeholder="Last name" required value={createForm.lastName} onChange={(e) => updateCreateForm('lastName', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-email" label="Email">
+              <input id="create-member-email" className={inputClass} placeholder="Email" type="email" required value={createForm.email} onChange={(e) => updateCreateForm('email', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-phone" label="Contact number">
+              <input id="create-member-phone" className={inputClass} placeholder="Contact number" value={createForm.phone} onChange={(e) => updateCreateForm('phone', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-date-of-birth" label="Date of birth">
+              <input id="create-member-date-of-birth" className={inputClass} type="date" max={new Date().toISOString().slice(0, 10)} value={createForm.dateOfBirth} onChange={(e) => updateCreateForm('dateOfBirth', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-gender" label="Gender" error={createFormErrors.gender}>
+              <select
+                id="create-member-gender"
+                className={inputClass}
+                required
+                value={createForm.gender}
+                onChange={(e) => updateCreateForm('gender', e.target.value)}
+                aria-invalid={createFormErrors.gender ? 'true' : 'false'}
+              >
+                <option value="" disabled>
+                  Select gender
                 </option>
-              ))}
-            </select>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </CreateFormField>
+            <CreateFormField id="create-member-nic" label={nicLabel} error={createFormErrors.nicNumber}>
+              <input
+                id="create-member-nic"
+                className={inputClass}
+                placeholder="National Identity Card number"
+                value={createForm.nicNumber}
+                required={isNicRequired}
+                onChange={(e) => updateCreateForm('nicNumber', e.target.value)}
+                aria-invalid={createFormErrors.nicNumber ? 'true' : 'false'}
+              />
+            </CreateFormField>
+            <CreateFormField id="create-member-password" label="Password">
+              <input id="create-member-password" className={inputClass} placeholder="Password" type="password" required minLength={8} value={createForm.password} onChange={(e) => updateCreateForm('password', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField
+              id="create-member-confirm-password"
+              label="Confirm password"
+              error={createFormErrors.confirmPassword ?? confirmPasswordError}
+            >
+              <input
+                id="create-member-confirm-password"
+                className={inputClass}
+                placeholder="Confirm password"
+                type="password"
+                required
+                minLength={8}
+                value={createForm.confirmPassword}
+                onChange={(e) => updateCreateForm('confirmPassword', e.target.value)}
+                aria-invalid={confirmPasswordError || createFormErrors.confirmPassword ? 'true' : 'false'}
+              />
+            </CreateFormField>
+            <CreateFormField id="create-member-city" label="City">
+              <input id="create-member-city" className={inputClass} placeholder="City" value={createForm.city} onChange={(e) => updateCreateForm('city', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-address" label="Address" className="sm:col-span-2">
+              <input id="create-member-address" className={inputClass} placeholder="Address" value={createForm.addressLine1} onChange={(e) => updateCreateForm('addressLine1', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-emergency-name" label="Emergency contact name">
+              <input id="create-member-emergency-name" className={inputClass} placeholder="Emergency contact name" value={createForm.emergencyContactName} onChange={(e) => updateCreateForm('emergencyContactName', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-emergency-phone" label="Emergency contact number">
+              <input id="create-member-emergency-phone" className={inputClass} placeholder="Emergency contact number" value={createForm.emergencyContactPhone} onChange={(e) => updateCreateForm('emergencyContactPhone', e.target.value)} />
+            </CreateFormField>
+            <CreateFormField id="create-member-plan" label="Membership package" className="sm:col-span-2">
+              <select id="create-member-plan" className={inputClass} value={createForm.planId} onChange={(e) => updateCreateForm('planId', e.target.value)}>
+                {packages.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name} — LKR {plan.price.toLocaleString('en-LK')}
+                  </option>
+                ))}
+              </select>
+            </CreateFormField>
           </div>
           <button type="submit" className={primaryBtnClass} disabled={saving}>
             {saving ? 'Creating…' : 'Create member'}
@@ -410,6 +575,34 @@ function InfoRow({ label, value }: { label: string; value?: string }) {
     <div>
       <dt className="text-xs font-medium text-portal-muted">{label}</dt>
       <dd className="mt-0.5 text-portal-ink">{value || '—'}</dd>
+    </div>
+  )
+}
+
+function CreateFormField({
+  id,
+  label,
+  error,
+  className,
+  children,
+}: {
+  id: string
+  label: string
+  error?: string
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div className={className ?? undefined}>
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-portal-muted">
+        {label}
+      </label>
+      {children}
+      {error && (
+        <p id={`${id}-error`} className="mt-1 text-xs text-rose-600" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
