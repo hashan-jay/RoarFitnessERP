@@ -12,6 +12,14 @@ using RoarFitnessERP.Api.Services;
 using RoarFitnessERP.Api.Services.Interfaces;
 using Scalar.AspNetCore;
 
+//Render utilization
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
+
 var builder = WebApplication.CreateBuilder(args);
 
 // --- MVC, JSON serialization, and validation ---
